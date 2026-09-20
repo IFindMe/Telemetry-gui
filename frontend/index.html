@@ -177,36 +177,43 @@
           <div class="phase-item active" data-phase="pre-flight">
             <span class="phase-marker"></span>
             <span class="phase-label">PRE-FLIGHT</span>
+            <span class="phase-help" data-tip="On the ground, idle. Altitude < 10m, velocity near zero.">?</span>
             <span class="phase-time mono" id="phasePre">—</span>
           </div>
           <div class="phase-item" data-phase="ignition">
             <span class="phase-marker"></span>
             <span class="phase-label">IGNITION</span>
+            <span class="phase-help" data-tip="Engine firing detected. High G-force (>2G) but barely moved.">?</span>
             <span class="phase-time mono" id="phaseIgn">—</span>
           </div>
           <div class="phase-item" data-phase="liftoff">
             <span class="phase-marker"></span>
             <span class="phase-label">LIFTOFF</span>
+            <span class="phase-help" data-tip="Rocket is leaving the pad. Velocity > 10 m/s, altitude > 10m.">?</span>
             <span class="phase-time mono" id="phaseLife">—</span>
           </div>
           <div class="phase-item" data-phase="ascent">
             <span class="phase-marker"></span>
             <span class="phase-label">ASCENT</span>
+            <span class="phase-help" data-tip="Climbing under power or coasting. Velocity > 0, altitude > 100m.">?</span>
             <span class="phase-time mono" id="phaseAsc">—</span>
           </div>
           <div class="phase-item" data-phase="apogee">
             <span class="phase-marker"></span>
             <span class="phase-label">APOGEE</span>
+            <span class="phase-help" data-tip="Reached peak, velocity crosses zero. Velocity < 0, altitude > 100m.">?</span>
             <span class="phase-time mono" id="phaseApo">—</span>
           </div>
           <div class="phase-item" data-phase="descent">
             <span class="phase-marker"></span>
             <span class="phase-label">DESCENT</span>
+            <span class="phase-help" data-tip="Falling back down. Velocity < -1 m/s.">?</span>
             <span class="phase-time mono" id="phaseDes">—</span>
           </div>
           <div class="phase-item" data-phase="recovery">
             <span class="phase-marker"></span>
             <span class="phase-label">RECOVERY</span>
+            <span class="phase-help" data-tip="Near ground after descent. Altitude < 50m, slowing down.">?</span>
             <span class="phase-time mono" id="phaseRec">—</span>
           </div>
         </div>
