@@ -829,3 +829,29 @@ renderRocket();
 refreshPorts().then(refreshStatus).then(refreshLogs).catch(e => log('Init: ' + e, 'warn'));
 connectWS();
 frame();
+
+// ═══ PHASE HELP TOOLTIPS ═══
+(function initTooltips() {
+  const tip = document.createElement('div');
+  tip.className = 'phase-tip';
+  document.body.appendChild(tip);
+
+  document.addEventListener('mouseover', e => {
+    const h = e.target.closest('.phase-help');
+    if (!h) return;
+    tip.textContent = h.dataset.tip;
+    tip.style.opacity = '1';
+  });
+
+  document.addEventListener('mouseout', e => {
+    const h = e.target.closest('.phase-help');
+    if (!h) return;
+    tip.style.opacity = '0';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (tip.style.opacity === '0') return;
+    tip.style.left = e.clientX + 12 + 'px';
+    tip.style.top = e.clientY - 10 + 'px';
+  });
+})();
