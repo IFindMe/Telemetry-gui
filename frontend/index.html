@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Telemetry · Ground Station</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">◈</span><div><strong>TELEMETRY</strong><small>GROUND STATION</small></div></div>
+    <div class="connection"><span id="statusDot" class="dot"></span><span id="statusText">DISCONNECTED</span><span class="divider"></span><span id="portLabel">—</span></div>
+    <div class="top-actions"><span class="metric">PKT <b id="packetRate">0</b>/s</span><button id="recordBtn" class="ghost">● Record</button></div>
+  </header>
+
+  <main class="dashboard">
+    <section class="hero-grid">
+      <article class="panel attitude">
+        <div class="panel-head"><div><span class="eyebrow">ATTITUDE</span><h2>Vehicle orientation</h2></div><span class="live-pill">LIVE</span></div>
+        <div class="horizon"><div class="horizon-sky"></div><div class="horizon-ground"></div><div class="pitch-lines"></div><div class="horizon-line"></div><div class="aircraft"><i></i><i></i><i></i></div></div>
+        <div class="axis-values">
+          <div><span>ROLL</span><b id="roll">0.00°</b></div><div><span>PITCH</span><b id="pitch">0.00°</b></div><div><span>YAW</span><b id="yaw">—</b></div>
+        </div>
+      </article>
+
+      <article class="panel control">
+        <div class="panel-head"><div><span class="eyebrow">LINK CONTROL</span><h2>Serial connection</h2></div></div>
+        <label>PORT<select id="port"></select></label>
+        <label>BAUD<select id="baud"><option>115200</option><option>230400</option><option>460800</option><option>921600</option></select></label>
+        <div class="button-row"><button id="refresh">Refresh</button><button id="connect" class="primary">Connect</button></div>
+        <div class="health"><div><span>PACKETS</span><b id="packets">0</b></div><div><span>INVALID</span><b id="invalid">0</b></div></div>
+      </article>
+    </section>
+
+    <section class="section-title"><span>IMU</span><em>Real-time sensor stream</em></section>
+    <section class="two-col">
+      <article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">ACCELEROMETER</span><h2>Linear acceleration</h2></div><span class="unit">m/s²</span></div><canvas id="accelChart"></canvas><div class="legend"><span class="x">X</span><span class="y">Y</span><span class="z">Z</span></div></article>
+      <article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">GYROSCOPE</span><h2>Angular velocity</h2></div><span class="unit">°/s</span></div><canvas id="gyroChart"></canvas><div class="legend"><span class="x">X</span><span class="y">Y</span><span class="z">Z</span></div></article>
+    </section>
+
+    <section class="section-title"><span>ENVIRONMENT</span><em>Pressure & thermal telemetry</em></section>
+    <section class="stats-grid">
+      <article class="stat panel"><span class="eyebrow">IMU TEMPERATURE</span><strong id="imuTemp">—</strong><small>°C</small><div class="spark" id="tempSpark"></div></article>
+      <article class="stat panel"><span class="eyebrow">BMP TEMPERATURE</span><strong id="bmpTemp">—</strong><small>°C</small><div class="spark" id="bmpSpark"></div></article>
+      <article class="stat panel"><span class="eyebrow">PRESSURE</span><strong id="pressure">—</strong><small>hPa</small><div class="spark" id="pressureSpark"></div></article>
+      <article class="stat panel"><span class="eyebrow">STREAM RATE</span><strong id="streamRate">0</strong><small>packets/s</small><div class="rate-bar"><i id="rateBar"></i></div></article>
+    </section>
+
+    <section class="panel console"><div class="panel-head"><div><span class="eyebrow">EVENT STREAM</span><h2>System console</h2></div><button id="clearLog" class="icon-btn">Clear</button></div><div id="log" class="log"></div></section>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
