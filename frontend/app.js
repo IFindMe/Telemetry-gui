@@ -8,7 +8,7 @@ const $ = id => document.getElementById(id);
 // ═══ STATE ═══
 const history = {
   accelX: [], accelY: [], accelZ: [],
-  gyroX: [], gyroY: [],
+  gyroX: [], gyroY: [], gyroZ: [],
   altitude: [],
 };
 const MAX = 180;
@@ -322,7 +322,7 @@ function push(k, v) {
 
 function update(d) {
   // Push history
-  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY'].forEach(k => push(k, d[k]));
+  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => push(k, d[k]));
   push('altitude', d.altitude || 0);
 
   // Use backend-computed derived values
@@ -733,7 +733,7 @@ function drawChart(canvasId, keys, colors) {
   ctx.lineTo(w, h / 2);
   ctx.stroke();
 
-  const all = keys.flatMap(k => history[k]);
+  const all = keys.filter(k => history[k]).flatMap(k => history[k]);
   if (!all.length) return;
   let lo = Math.min(...all);
   let hi = Math.max(...all);
@@ -744,6 +744,7 @@ function drawChart(canvasId, keys, colors) {
 
   keys.forEach((k, i) => {
     const a = history[k];
+    if (!a || !a.length) return;
     ctx.strokeStyle = colors[i];
     ctx.lineWidth = 1.5;
     ctx.beginPath();
