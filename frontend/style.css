@@ -803,7 +803,7 @@ body::before {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1px;
-  padding: 0 14px 14px;
+  padding: 14px 14px 14px;
   background: var(--bg);
   margin: 0;
 }
@@ -864,10 +864,10 @@ body::before {
 
 /* ═══ LOG ═══ */
 .panel-log {
-  flex: 1;
+  flex: 0 0 auto;
+  max-height: 180px;
   display: flex;
   flex-direction: column;
-  min-height: 150px;
 }
 .log {
   flex: 1;
