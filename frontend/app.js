@@ -16,6 +16,7 @@ let ws = null, lastPacket = performance.now(), packetsWindow = 0, lastRateTime =
 let metStart = null;
 let androidActive = false;
 let simPaused = false;
+const phaseReached = {};
 let replaying = false;
 let replayPaused = false;
 let activeSourceTab = 'serial';
@@ -156,9 +157,32 @@ $('clearLog').onclick = () => $('log').replaceChildren();
 function switchSourceTab(name) {
   activeSourceTab = name;
   document.querySelectorAll('.source-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.querySelectorAll('.source-content').forEach(c => c.classList.add('hidden'));
-  const panel = $('tab-' + name);
-  if (panel) panel.classList.remove('hidden');
+  // Animate: hide current, show new
+  document.querySelectorAll('.source-content').forEach(c => {
+    if (!c.classList.contains('hidden')) {
+      c.style.opacity = '0';
+      c.style.transform = 'translateY(-6px)';
+      setTimeout(() => {
+        c.classList.add('hidden');
+        c.style.opacity = '';
+        c.style.transform = '';
+      }, 150);
+    }
+  });
+  setTimeout(() => {
+    const panel = $('tab-' + name);
+    if (panel) {
+      panel.classList.remove('hidden');
+      panel.style.opacity = '0';
+      panel.style.transform = 'translateY(6px)';
+      requestAnimationFrame(() => {
+        panel.style.transition = 'opacity .2s, transform .2s';
+        panel.style.opacity = '1';
+        panel.style.transform = 'translateY(0)';
+        setTimeout(() => { panel.style.transition = ''; }, 200);
+      });
+    }
+  }, 160);
   // Update badge
   const labels = { serial: 'SERIAL', sim: 'SIM', android: 'PHYPOX', replay: 'REPLAY' };
   $('sourceLabel').textContent = labels[name] || name;
@@ -310,6 +334,10 @@ $('simBtn').onclick = async () => {
     $('simBtn').classList.toggle('active', simulating);
     $('simStatus').style.display = simulating ? 'flex' : 'none';
     log(simulating ? 'Simulation started — full flight profile' : 'Simulation stopped', simulating ? 'good' : 'warn');
+    if (simulating) {
+      Object.keys(phaseReached).forEach(k => delete phaseReached[k]);
+      ['phasePre', 'phaseIgn', 'phaseLife', 'phaseAsc', 'phaseApo', 'phaseDes', 'phaseRec'].forEach(id => { const el = $(id); if (el) el.textContent = '—'; });
+    }
     await refreshStatus();
   } catch (e) { log('Simulation: ' + e, 'warn'); }
 };
@@ -689,6 +717,18 @@ function updateFlightPhaseDisplay(phase) {
     if (i < currentIdx) el.classList.add('done');
     else if (i === currentIdx) el.classList.add('active');
   });
+
+  // Record timestamp when each phase is first reached
+  const timeMap = { 'PRE-FLIGHT': 'phasePre', 'IGNITION': 'phaseIgn', 'LIFTOFF': 'phaseLife', 'ASCENT': 'phaseAsc', 'APOGEE': 'phaseApo', 'DESCENT': 'phaseDes', 'RECOVERY': 'phaseRec' };
+  const id = timeMap[phase];
+  if (id && !phaseReached[id]) {
+    phaseReached[id] = true;
+    const el = $(id);
+    if (el) {
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+  }
 }
 
 // ═══ MET CLOCK ═══
