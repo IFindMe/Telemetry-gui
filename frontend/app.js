@@ -792,7 +792,7 @@ function initPitchLines() {
 // ═══ ANIMATION LOOP ═══
 function frame() {
   drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
-  drawChart('gyroChart', ['gyroX', 'gyroY'], ['#a78bfa', '#ffb800']);
+  drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
   drawChart('altChart', ['altitude'], ['#ffb800']);
   requestAnimationFrame(frame);
 }

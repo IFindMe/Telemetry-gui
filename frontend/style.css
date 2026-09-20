@@ -720,9 +720,16 @@ body::before {
   border-radius: 3px;
   background: rgba(255,255,255,.04);
 }
-.legend-x { color: #ff6b6b; }
-.legend-y { color: var(--cyan); }
-.legend-z { color: var(--green); }
+/* Accelerometer legend: red=X, cyan=Y, green=Z */
+.accel-legend .legend-x { color: #ff6b6b; }
+.accel-legend .legend-y { color: var(--cyan); }
+.accel-legend .legend-z { color: var(--green); }
+
+/* Gyroscope legend: purple=X, amber=Y, teal=Z */
+.gyro-legend .legend-x { color: #a78bfa; }
+.gyro-legend .legend-y { color: #ffb800; }
+.gyro-legend .legend-z { color: #2dd4bf; }
+
 .legend-alt { color: var(--amber); }
 
 /* ═══ RIGHT COLUMN ═══ */
