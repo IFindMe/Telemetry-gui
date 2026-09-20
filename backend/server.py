@@ -181,6 +181,9 @@ async def replay(payload: dict):
         log_file = payload.get("log_file")
         if not log_file:
             raise HTTPException(400, "log_file is required")
+        # Resolve to logs/ directory if just a filename
+        if not ("/" in log_file or "\\" in log_file):
+            log_file = str(Path("logs") / log_file)
         speed = float(payload.get("speed", 1.0))
         # Stop other sources
         if simulator.running:
