@@ -388,10 +388,10 @@ function initRocket3D() {
   // Scene
   scene = new THREE.Scene();
 
-  // Camera
-  camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 1000);
-  camera.position.set(0, 2, 8);
-  camera.lookAt(0, 0, 0);
+  // Camera — fixed ground spectator, looking up
+  camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 500);
+  camera.position.set(0, 0.5, 12);
+  camera.lookAt(0, 15, 0);  // look upward into the sky
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -488,11 +488,11 @@ function initRocket3D() {
   scene.add(rocketGroup);
 
   // ── Ground plane ──
-  const groundGeo = new THREE.PlaneGeometry(40, 40);
-  const groundMat = new THREE.MeshPhongMaterial({ color: 0x1a2a1a, transparent: true, opacity: 0.4 });
+  const groundGeo = new THREE.PlaneGeometry(60, 60);
+  const groundMat = new THREE.MeshPhongMaterial({ color: 0x1a2a1a, transparent: true, opacity: 0.5 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -2.5;
+  ground.position.y = -0.3;
   scene.add(ground);
 
   // Handle resize
@@ -520,10 +520,18 @@ function updateRocket(d) {
   // Track max altitude for scaling
   if (alt > S.maxAlt) S.maxAlt = Math.max(alt, 100);
 
-  // ── Vertical position ──
+  // ── Vertical position (ground view: rocket rises away from camera) ──
   const altNorm = Math.min(alt / S.maxAlt, 1.0);
-  const targetY = -2.5 + altNorm * 8.5;
+  const targetY = altNorm * 20;  // rocket goes from 0 to 20 units up
   rocketGroup.position.y += (targetY - rocketGroup.position.y) * 0.15;
+
+  // ── Shrink as it goes up (perspective illusion) ──
+  const scale = 1.0 - altNorm * 0.6;  // shrinks to 40% at max alt
+  rocketGroup.scale.setScalar(Math.max(scale, 0.3));
+
+  // ── Camera tilt (person on ground tilting head up) ──
+  const lookY = 5 + altNorm * 20;
+  camera.lookAt(0, lookY, 0);
 
   // ── Exhaust ──
   const exhaust = rocketGroup.children.find(c =>
@@ -534,11 +542,6 @@ function updateRocket(d) {
     exhaust.material.opacity = thrusting ? 0.4 + Math.random() * 0.3 : 0.05;
     exhaust.scale.y = thrusting ? 0.8 + Math.random() * 0.6 : 0.15;
   }
-
-  // ── Camera follow ──
-  const camY = 2 + altNorm * 3;
-  camera.position.y += (camY - camera.position.y) * 0.05;
-  camera.lookAt(0, rocketGroup.position.y, 0);
 
   // ── Phase-based orientation ──
   switch (phase) {
