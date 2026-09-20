@@ -350,7 +350,7 @@ function update(d) {
   val('rawGyroZ', d.gyroZ);
 
   // Update 3D rocket
-  updateRocket(d.gyroX, d.gyroY, d.gyroZ);
+  updateRocket(d);
 
   // Update artificial horizon
   updateHorizon(d.gyroY, d.gyroX);
@@ -370,7 +370,15 @@ function update(d) {
 
 // ═══ THREE.JS — 3D ROCKET ═══
 let scene, camera, renderer, rocketGroup, stars;
-let targetRotX = 0, targetRotZ = 0;
+let exhaustFlame, exhaustGlow;
+let rocketState = {
+  altitude: 0, velocity: 0, phase: 'PRE-FLIGHT',
+  tiltX: 0, tiltZ: 0, yaw: 0,
+  targetTiltX: 0, targetTiltZ: 0, targetYaw: 0,
+  turbX: 0, turbZ: 0,
+  prevAlt: 0, prevTime: 0,
+  maxAlt: 500, // will be updated from telemetry
+};
 
 function initRocket3D() {
   const container = $('rocket3d');
@@ -479,6 +487,14 @@ function initRocket3D() {
 
   scene.add(rocketGroup);
 
+  // ── Ground plane ──
+  const groundGeo = new THREE.PlaneGeometry(40, 40);
+  const groundMat = new THREE.MeshPhongMaterial({ color: 0x1a2a1a, transparent: true, opacity: 0.4 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -2.5;
+  scene.add(ground);
+
   // Handle resize
   window.addEventListener('resize', () => {
     const w2 = container.clientWidth;
@@ -489,26 +505,110 @@ function initRocket3D() {
   });
 }
 
-function updateRocket(gyroX, gyroY, gyroZ) {
+function updateRocket(d) {
   if (!rocketGroup) return;
-  // Smooth rotation driven by telemetry
-  // gyroX = roll rate → integrate to roll angle
-  // gyroY = pitch rate → integrate to pitch angle
-  targetRotX += gyroY * 0.001; // pitch
-  targetRotZ += gyroX * 0.001; // roll
 
-  // Clamp
-  targetRotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotX));
-  targetRotZ = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, targetRotZ));
+  const alt = d.altitude || 0;
+  const vel = d.velocity || 0;
+  const phase = d.flight_phase || 'PRE-FLIGHT';
+  const ax = d.accelX || 0;
+  const ay = d.accelY || 0;
+  const gz = d.gyroZ || 0;
+  const now = performance.now() / 1000;
+  const S = rocketState;
 
-  // Smooth interpolation
-  rocketGroup.rotation.x += (targetRotX - rocketGroup.rotation.x) * 0.1;
-  rocketGroup.rotation.z += (targetRotZ - rocketGroup.rotation.z) * 0.1;
-  rocketGroup.rotation.y += gyroZ * 0.0005; // yaw
+  // Track max altitude for scaling
+  if (alt > S.maxAlt) S.maxAlt = Math.max(alt, 100);
+
+  // ── Vertical position ──
+  const altNorm = Math.min(alt / S.maxAlt, 1.0);
+  const targetY = -2.5 + altNorm * 8.5;
+  rocketGroup.position.y += (targetY - rocketGroup.position.y) * 0.15;
+
+  // ── Exhaust ──
+  const exhaust = rocketGroup.children.find(c =>
+    c.material && c.material.color && c.material.color.getHex() === 0xff6600
+  );
+  if (exhaust) {
+    const thrusting = (phase === 'IGNITION' || phase === 'LIFTOFF' || phase === 'ASCENT');
+    exhaust.material.opacity = thrusting ? 0.4 + Math.random() * 0.3 : 0.05;
+    exhaust.scale.y = thrusting ? 0.8 + Math.random() * 0.6 : 0.15;
+  }
+
+  // ── Camera follow ──
+  const camY = 2 + altNorm * 3;
+  camera.position.y += (camY - camera.position.y) * 0.05;
+  camera.lookAt(0, rocketGroup.position.y, 0);
+
+  // ── Phase-based orientation ──
+  switch (phase) {
+    case 'PRE-FLIGHT':
+      S.targetTiltX = Math.sin(now * 0.3) * 0.02;
+      S.targetTiltZ = Math.cos(now * 0.2) * 0.02;
+      S.targetYaw = 0;
+      break;
+
+    case 'IGNITION':
+      S.targetTiltX = Math.sin(now * 15) * 0.03;
+      S.targetTiltZ = Math.cos(now * 12) * 0.03;
+      S.targetYaw = 0;
+      break;
+
+    case 'LIFTOFF':
+      S.targetTiltX = Math.sin(now * 20) * 0.04 + ax * 0.05;
+      S.targetTiltZ = Math.cos(now * 18) * 0.04 + ay * 0.05;
+      S.targetYaw += gz * 0.0003;
+      break;
+
+    case 'ASCENT':
+      S.turbX += (ax * 0.08 - S.turbX) * 0.1;
+      S.turbZ += (ay * 0.08 - S.turbZ) * 0.1;
+      S.targetTiltX = S.turbX + Math.sin(now * 0.5) * 0.05;
+      S.targetTiltZ = S.turbZ + Math.cos(now * 0.4) * 0.05;
+      S.targetYaw += gz * 0.0004;
+      S.targetTiltX += altNorm * 0.15;
+      break;
+
+    case 'APOGEE': {
+      const apoProgress = Math.min(Math.abs(vel) / 20, 1.0);
+      S.targetTiltX = 0.3 + apoProgress * 0.8;
+      S.targetTiltZ = Math.sin(now * 0.8) * 0.2;
+      S.targetYaw += gz * 0.001 + 0.01;
+      break;
+    }
+
+    case 'DESCENT': {
+      const descendSpeed = Math.min(Math.abs(vel) / 30, 1.0);
+      S.targetTiltX = 1.2 + Math.sin(now * 0.6) * 0.4;
+      S.targetTiltZ = Math.cos(now * 0.5) * 0.5 * descendSpeed;
+      S.targetYaw += 0.02 + descendSpeed * 0.03;
+      if (altNorm < 0.1) {
+        S.targetTiltX *= 0.3;
+        S.targetTiltZ *= 0.3;
+      }
+      break;
+    }
+
+    case 'RECOVERY':
+      S.targetTiltX *= 0.85;
+      S.targetTiltZ *= 0.85;
+      S.targetYaw *= 0.9;
+      break;
+  }
+
+  // ── Smooth interpolation ──
+  S.tiltX += (S.targetTiltX - S.tiltX) * 0.08;
+  S.tiltZ += (S.targetTiltZ - S.tiltZ) * 0.08;
+  S.yaw += (S.targetYaw - S.yaw) * 0.08;
+
+  rocketGroup.rotation.x = S.tiltX;
+  rocketGroup.rotation.z = S.tiltZ;
+  rocketGroup.rotation.y = S.yaw;
 
   // Stars drift
   if (stars) stars.rotation.y += 0.0001;
 }
+
 
 function renderRocket() {
   if (renderer && scene && camera) {

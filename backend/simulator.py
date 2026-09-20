@@ -101,7 +101,12 @@ class RocketSimulator:
             progress = (t - self.LAUNCH_DELAY) / self.IGNITION_DURATION
             thrust = self.THRUST_ACCEL * progress  # linear ramp
 
-        # ── THRUST (full power, time-limited) ──
+        # ── LIFTOFF (just left the pad, still low) ──
+        elif self.alt < 20 and self.vel > 0:
+            self.phase = "LIFTOFF"
+            thrust = self.THRUST_ACCEL
+
+        # ── THRUST (full power, climbing) ──
         elif t < self.LAUNCH_DELAY + self.IGNITION_DURATION + self.THRUST_DURATION:
             self.phase = "ASCENT"
             thrust = self.THRUST_ACCEL
