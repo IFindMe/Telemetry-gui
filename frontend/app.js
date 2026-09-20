@@ -388,10 +388,10 @@ function initRocket3D() {
   // Scene
   scene = new THREE.Scene();
 
-  // Camera — fixed ground spectator, looking up
-  camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 500);
-  camera.position.set(0, 0.5, 12);
-  camera.lookAt(0, 15, 0);  // look upward into the sky
+  // Camera — fixed ground spectator, far enough to see full vertical trajectory
+  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 500);
+  camera.position.set(0, 3, 30);
+  camera.lookAt(0, 8, 0);
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -488,7 +488,7 @@ function initRocket3D() {
   scene.add(rocketGroup);
 
   // ── Ground plane ──
-  const groundGeo = new THREE.PlaneGeometry(60, 60);
+  const groundGeo = new THREE.PlaneGeometry(80, 80);
   const groundMat = new THREE.MeshPhongMaterial({ color: 0x1a2a1a, transparent: true, opacity: 0.5 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
@@ -522,15 +522,15 @@ function updateRocket(d) {
 
   // ── Vertical position (ground view: rocket rises away from camera) ──
   const altNorm = Math.min(alt / S.maxAlt, 1.0);
-  const targetY = altNorm * 20;  // rocket goes from 0 to 20 units up
+  const targetY = altNorm * 14;  // rocket goes from 0 to 14 units up
   rocketGroup.position.y += (targetY - rocketGroup.position.y) * 0.15;
 
   // ── Shrink as it goes up (perspective illusion) ──
-  const scale = 1.0 - altNorm * 0.6;  // shrinks to 40% at max alt
-  rocketGroup.scale.setScalar(Math.max(scale, 0.3));
+  const scale = 1.0 - altNorm * 0.5;  // shrinks to 50% at max alt
+  rocketGroup.scale.setScalar(Math.max(scale, 0.35));
 
-  // ── Camera tilt (person on ground tilting head up) ──
-  const lookY = 5 + altNorm * 20;
+  // ── Camera tilt (subtle, keeps rocket in frame) ──
+  const lookY = 5 + altNorm * 10;
   camera.lookAt(0, lookY, 0);
 
   // ── Exhaust ──
