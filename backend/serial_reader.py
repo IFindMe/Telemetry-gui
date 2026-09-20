@@ -1,7 +1,5 @@
 import asyncio
-import csv
 from datetime import datetime
-from pathlib import Path
 
 import serial
 import serial.tools.list_ports
@@ -16,9 +14,6 @@ class SerialReader:
         self.connected = False
         self.port = None
         self.baud = 115200
-        self.recording = False
-        self.csv_file = None
-        self.csv_writer = None
         self.packet_count = 0
         self.invalid_count = 0
         self.last_error = None
@@ -33,6 +28,7 @@ class SerialReader:
 
     async def connect(self, port: str, baud: int):
         await self.disconnect()
+        TelemetrySample.reset_base_pressure()
         self.serial = serial.Serial(port, baud, timeout=0)
         self.port = port
         self.baud = baud
@@ -55,28 +51,7 @@ class SerialReader:
         if self.serial:
             self.serial.close()
         self.serial = None
-        self.stop_recording()
         self.port = None
-
-    def start_recording(self):
-        if self.recording:
-            return
-        Path("logs").mkdir(exist_ok=True)
-        path = Path("logs") / f"telemetry_{datetime.now():%Y%m%d_%H%M%S}.csv"
-        self.csv_file = path.open("w", newline="", encoding="utf-8")
-        self.csv_writer = csv.writer(self.csv_file)
-        self.csv_writer.writerow([
-            "time", "accelX", "accelY", "accelZ",
-            "gyroX", "gyroY", "gyroZ", "imuTemp", "bmpTemp", "bmpPressure",
-        ])
-        self.recording = True
-
-    def stop_recording(self):
-        if self.csv_file:
-            self.csv_file.close()
-        self.csv_file = None
-        self.csv_writer = None
-        self.recording = False
 
     async def _loop(self):
         while self.connected and self.serial:
@@ -91,12 +66,6 @@ class SerialReader:
                         self.invalid_count += 1
                         continue
                     self.packet_count += 1
-                    if self.csv_writer:
-                        self.csv_writer.writerow([getattr(sample, f) for f in [
-                            "time", "accelX", "accelY", "accelZ", "gyroX", "gyroY",
-                            "gyroZ", "imuTemp", "bmpTemp", "bmpPressure"
-                        ]])
-                        self.csv_file.flush()
                     await self.on_sample(sample)
                 await asyncio.sleep(0.005)
             except (serial.SerialException, OSError) as exc:

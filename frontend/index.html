@@ -3,56 +3,472 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Telemetry · Ground Station</title>
+  <meta name="theme-color" content="#090c11">
+  <meta name="description" content="Real-time rocket telemetry dashboard with 3D visualization">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RocketMC">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <title>ROCKET · Mission Control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="app-shell">
+
+  <!-- ═══ TOPBAR ═══ -->
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">◈</span><div><strong>TELEMETRY</strong><small>GROUND STATION</small></div></div>
-    <div class="connection"><span id="statusDot" class="dot"></span><span id="statusText">DISCONNECTED</span><span class="divider"></span><span id="portLabel">—</span></div>
-    <div class="top-actions"><span class="metric">PKT <b id="packetRate">0</b>/s</span><button id="recordBtn" class="ghost">● Record</button></div>
+    <div class="brand">
+      <div class="brand-icon">▲</div>
+      <div><strong>ROCKET</strong><small>MISSION CONTROL</small></div>
+    </div>
+    <div class="topbar-center">
+      <div class="mission-clock">
+        <span class="eyebrow">MET</span>
+        <span id="met" class="mono">T-00:00:00</span>
+      </div>
+      <div class="flight-phase" id="flightPhase">
+        <span class="phase-dot"></span>
+        <span id="phaseText">STANDBY</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="connection">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText" class="mono">OFFLINE</span>
+        <span class="divider"></span>
+        <span id="portLabel" class="mono">—</span>
+      </div>
+      <div class="topbar-metrics">
+        <div class="metric-chip"><span class="eyebrow">PKT</span><span id="packetRate" class="mono">0</span><span class="unit">/s</span></div>
+        <div class="metric-chip"><span class="eyebrow">ERR</span><span id="invalid" class="mono warn">0</span></div>
+      </div>
+      <button id="recordBtn" class="btn-ghost">● REC</button>
+    </div>
   </header>
 
-  <main class="dashboard">
-    <section class="hero-grid">
-      <article class="panel attitude">
-        <div class="panel-head"><div><span class="eyebrow">ATTITUDE</span><h2>Vehicle orientation</h2></div><span class="live-pill">LIVE</span></div>
-        <div class="horizon"><div class="horizon-sky"></div><div class="horizon-ground"></div><div class="pitch-lines"></div><div class="horizon-line"></div><div class="aircraft"><i></i><i></i><i></i></div></div>
-        <div class="axis-values">
-          <div><span>ROLL</span><b id="roll">0.00°</b></div><div><span>PITCH</span><b id="pitch">0.00°</b></div><div><span>YAW</span><b id="yaw">—</b></div>
+  <!-- ═══ MAIN GRID ═══ -->
+  <main class="mc-grid">
+
+    <!-- ─── LEFT COLUMN ─── -->
+    <aside class="col-left">
+
+      <!-- Data Source — Compact by default -->
+      <article class="panel panel-control" id="controlPanel">
+        <!-- Compact status bar (visible when collapsed) -->
+        <div class="control-compact" id="controlCompact">
+          <div class="control-compact-left">
+            <span class="eyebrow">LINK</span>
+            <span class="source-badge mono" id="sourceLabel">SERIAL</span>
+            <span class="control-status-text mono" id="controlStatusText">Disconnected</span>
+          </div>
+          <button id="controlExpand" class="btn-expand">⚙</button>
+        </div>
+
+        <!-- Expanded card (hidden by default) -->
+        <div class="control-expanded hidden" id="controlExpanded">
+          <div class="source-tabs">
+            <button class="source-tab active" data-tab="serial">SERIAL</button>
+            <button class="source-tab" data-tab="sim">SIM</button>
+            <button class="source-tab" data-tab="android">PHYPOX</button>
+            <button class="source-tab" data-tab="replay">REPLAY</button>
+          </div>
+          <div class="control-body">
+
+            <!-- Serial Tab -->
+            <div class="source-content" id="tab-serial">
+              <label class="field">
+                <span>PORT</span>
+                <select id="port"></select>
+              </label>
+              <label class="field">
+                <span>BAUD</span>
+                <select id="baud">
+                  <option>115200</option>
+                  <option>230400</option>
+                  <option>460800</option>
+                  <option>921600</option>
+                </select>
+              </label>
+              <div class="btn-row">
+                <button id="refresh" class="btn-sm">↻ SCAN</button>
+                <button id="connect" class="btn-primary">CONNECT</button>
+              </div>
+            </div>
+
+            <!-- Simulation Tab -->
+            <div class="source-content hidden" id="tab-sim">
+              <button id="simBtn" class="btn-sim">▶ SIMULATE FLIGHT</button>
+              <div class="sim-status" id="simStatus" style="display:none;">
+                <span class="sim-dot"></span>
+                <span>Simulation running</span>
+              </div>
+              <label class="field">
+                <span>SPEED</span>
+                <div class="speed-row">
+                  <button class="speed-btn sim-speed-btn" data-speed="0.5">0.5x</button>
+                  <button class="speed-btn sim-speed-btn active" data-speed="1">1x</button>
+                  <button class="speed-btn sim-speed-btn" data-speed="2">2x</button>
+                  <button class="speed-btn sim-speed-btn" data-speed="5">5x</button>
+                  <button class="speed-btn sim-speed-btn" data-speed="10">10x</button>
+                </div>
+              </label>
+              <button id="simPause" class="btn-sm">❚❚ PAUSE</button>
+            </div>
+
+            <!-- Android IMU Tab -->
+            <div class="source-content hidden" id="tab-android">
+              <label class="field">
+                <span>IP ADDRESS</span>
+                <input id="androidIp" class="input-dark" type="text" value="100.100.1.34" placeholder="e.g. 100.100.1.34">
+              </label>
+              <label class="field">
+                <span>PORT</span>
+                <input id="androidPort" class="input-dark" type="text" value="8080" placeholder="e.g. 8080">
+              </label>
+              <button id="androidBtn" class="btn-sim btn-android">📱 CONNECT</button>
+              <div class="sim-status" id="androidStatus" style="display:none;">
+                <span class="sim-dot" style="background: #26de81;"></span>
+                <span>Android IMU active</span>
+              </div>
+            </div>
+
+            <!-- Log Replay Tab -->
+            <div class="source-content hidden" id="tab-replay">
+              <div class="btn-row">
+                <select id="logSelect" class="input-dark log-select">
+                  <option value="">— select log —</option>
+                </select>
+                <button id="logRefresh" class="btn-sm">↻</button>
+              </div>
+              <label class="field">
+                <span>SPEED</span>
+                <div class="speed-row">
+                  <button class="speed-btn replay-speed-btn" data-speed="0.1">0.1x</button>
+                  <button class="speed-btn replay-speed-btn" data-speed="0.5">0.5x</button>
+                  <button class="speed-btn replay-speed-btn active" data-speed="1">1x</button>
+                  <button class="speed-btn replay-speed-btn" data-speed="2">2x</button>
+                  <button class="speed-btn replay-speed-btn" data-speed="5">5x</button>
+                </div>
+              </label>
+              <button id="replayBtn" class="btn-sim btn-replay">▶ PLAY</button>
+              <button id="replayPause" class="btn-sm">❚❚ PAUSE</button>
+              <div class="replay-controls">
+                <input id="replayProgress" type="range" class="replay-seek" min="0" max="100" value="0" step="0.1">
+                <div class="replay-time">
+                  <span id="replayTime" class="mono">0:00 / 0:00</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </article>
 
-      <article class="panel control">
-        <div class="panel-head"><div><span class="eyebrow">LINK CONTROL</span><h2>Serial connection</h2></div></div>
-        <label>PORT<select id="port"></select></label>
-        <label>BAUD<select id="baud"><option>115200</option><option>230400</option><option>460800</option><option>921600</option></select></label>
-        <div class="button-row"><button id="refresh">Refresh</button><button id="connect" class="primary">Connect</button></div>
-        <div class="health"><div><span>PACKETS</span><b id="packets">0</b></div><div><span>INVALID</span><b id="invalid">0</b></div></div>
+      <!-- Flight Phases -->
+      <article class="panel panel-phases">
+        <div class="panel-head">
+          <span class="eyebrow">FLIGHT PHASES</span>
+        </div>
+        <div class="phases-body">
+          <div class="phase-item active" data-phase="pre-flight">
+            <span class="phase-marker"></span>
+            <span class="phase-label">PRE-FLIGHT</span>
+            <span class="phase-time mono" id="phasePre">—</span>
+          </div>
+          <div class="phase-item" data-phase="ignition">
+            <span class="phase-marker"></span>
+            <span class="phase-label">IGNITION</span>
+            <span class="phase-time mono" id="phaseIgn">—</span>
+          </div>
+          <div class="phase-item" data-phase="liftoff">
+            <span class="phase-marker"></span>
+            <span class="phase-label">LIFTOFF</span>
+            <span class="phase-time mono" id="phaseLife">—</span>
+          </div>
+          <div class="phase-item" data-phase="ascent">
+            <span class="phase-marker"></span>
+            <span class="phase-label">ASCENT</span>
+            <span class="phase-time mono" id="phaseAsc">—</span>
+          </div>
+          <div class="phase-item" data-phase="apogee">
+            <span class="phase-marker"></span>
+            <span class="phase-label">APOGEE</span>
+            <span class="phase-time mono" id="phaseApo">—</span>
+          </div>
+          <div class="phase-item" data-phase="descent">
+            <span class="phase-marker"></span>
+            <span class="phase-label">DESCENT</span>
+            <span class="phase-time mono" id="phaseDes">—</span>
+          </div>
+          <div class="phase-item" data-phase="recovery">
+            <span class="phase-marker"></span>
+            <span class="phase-label">RECOVERY</span>
+            <span class="phase-time mono" id="phaseRec">—</span>
+          </div>
+        </div>
       </article>
+
+      <!-- Smooth Control -->
+      <article class="panel panel-smooth">
+        <div class="panel-head">
+          <span class="eyebrow">SMOOTH</span>
+        </div>
+        <div class="smooth-btns">
+          <button class="smooth-btn" data-level="OFF">OFF</button>
+          <button class="smooth-btn" data-level="LOW">LOW</button>
+          <button class="smooth-btn" data-level="MED">MED</button>
+          <button class="smooth-btn active" data-level="HIGH">HIGH</button>
+        </div>
+      </article>
+
+      <!-- Raw Data -->
+      <article class="panel panel-raw">
+        <div class="panel-head">
+          <span class="eyebrow">RAW TELEMETRY</span>
+        </div>
+        <div class="raw-grid">
+          <div class="raw-cell"><span class="eyebrow">ACCEL X</span><span class="mono" id="rawAccelX">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">ACCEL Y</span><span class="mono" id="rawAccelY">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">ACCEL Z</span><span class="mono" id="rawAccelZ">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO X</span><span class="mono" id="rawGyroX">0.00</span><span class="unit">°/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO Y</span><span class="mono" id="rawGyroY">0.00</span><span class="unit">°/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO Z</span><span class="mono" id="rawGyroZ">0.00</span><span class="unit">°/s</span></div>
+        </div>
+      </article>
+    </aside>
+
+    <!-- ─── CENTER COLUMN ─── -->
+    <section class="col-center">
+
+      <!-- 3D Rocket + Attitude Hero -->
+      <div class="hero-row">
+        <article class="panel panel-rocket">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">VEHICLE ORIENTATION</span>
+              <h2>3D Attitude</h2>
+            </div>
+            <span class="live-pill">LIVE</span>
+          </div>
+          <div id="rocket3d" class="rocket-viewport"></div>
+          <div class="attitude-readout">
+            <div class="attitude-axis">
+              <span class="eyebrow">ROLL</span>
+              <span class="mono val" id="roll">0.00°</span>
+            </div>
+            <div class="attitude-axis">
+              <span class="eyebrow">PITCH</span>
+              <span class="mono val" id="pitch">0.00°</span>
+            </div>
+            <div class="attitude-axis">
+              <span class="eyebrow">YAW</span>
+              <span class="mono val" id="yaw">0.00°</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel panel-horizon">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">ATTITUDE</span>
+              <h2>Artificial Horizon</h2>
+            </div>
+          </div>
+          <div class="horizon">
+            <div class="horizon-sky"></div>
+            <div class="horizon-ground"></div>
+            <div class="pitch-lines" id="pitchLines"></div>
+            <div class="horizon-line"></div>
+            <div class="aircraft"><i></i><i></i><i></i></div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Telemetry Strip -->
+      <div class="telemetry-strip">
+        <div class="strip-cell">
+          <span class="eyebrow">ALTITUDE</span>
+          <span class="mono val large" id="altitude">0</span>
+          <span class="unit">m</span>
+        </div>
+        <div class="strip-cell">
+          <span class="eyebrow">VELOCITY</span>
+          <span class="mono val large" id="velocity">0.0</span>
+          <span class="unit">m/s</span>
+        </div>
+        <div class="strip-cell">
+          <span class="eyebrow">PRESSURE</span>
+          <span class="mono val" id="pressure">—</span>
+          <span class="unit">hPa</span>
+        </div>
+        <div class="strip-cell">
+          <span class="eyebrow">IMU TEMP</span>
+          <span class="mono val" id="imuTemp">—</span>
+          <span class="unit">°C</span>
+        </div>
+        <div class="strip-cell">
+          <span class="eyebrow">BMP TEMP</span>
+          <span class="mono val" id="bmpTemp">—</span>
+          <span class="unit">°C</span>
+        </div>
+        <div class="strip-cell">
+          <span class="eyebrow">G-FORCE</span>
+          <span class="mono val" id="gforce">1.00</span>
+          <span class="unit">G</span>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-row">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <span class="eyebrow">ACCELEROMETER</span>
+            <span class="unit">m/s²</span>
+          </div>
+          <canvas id="accelChart"></canvas>
+          <div class="chart-legend">
+            <span class="legend-x">X</span>
+            <span class="legend-y">Y</span>
+            <span class="legend-z">Z</span>
+          </div>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <span class="eyebrow">GYROSCOPE</span>
+            <span class="unit">°/s</span>
+          </div>
+          <canvas id="gyroChart"></canvas>
+          <div class="chart-legend">
+            <span class="legend-x">X</span>
+            <span class="legend-y">Y</span>
+            <span class="legend-z">Z</span>
+          </div>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <span class="eyebrow">ALTITUDE PROFILE</span>
+            <span class="unit">m</span>
+          </div>
+          <canvas id="altChart"></canvas>
+          <div class="chart-legend">
+            <span class="legend-alt">ALT</span>
+          </div>
+        </article>
+      </div>
     </section>
 
-    <section class="section-title"><span>IMU</span><em>Real-time sensor stream</em></section>
-    <section class="two-col">
-      <article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">ACCELEROMETER</span><h2>Linear acceleration</h2></div><span class="unit">m/s²</span></div><canvas id="accelChart"></canvas><div class="legend"><span class="x">X</span><span class="y">Y</span><span class="z">Z</span></div></article>
-      <article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">GYROSCOPE</span><h2>Angular velocity</h2></div><span class="unit">°/s</span></div><canvas id="gyroChart"></canvas><div class="legend"><span class="x">X</span><span class="y">Y</span><span class="z">Z</span></div></article>
-    </section>
+    <!-- ─── RIGHT COLUMN ─── -->
+    <aside class="col-right">
 
-    <section class="section-title"><span>ENVIRONMENT</span><em>Pressure & thermal telemetry</em></section>
-    <section class="stats-grid">
-      <article class="stat panel"><span class="eyebrow">IMU TEMPERATURE</span><strong id="imuTemp">—</strong><small>°C</small><div class="spark" id="tempSpark"></div></article>
-      <article class="stat panel"><span class="eyebrow">BMP TEMPERATURE</span><strong id="bmpTemp">—</strong><small>°C</small><div class="spark" id="bmpSpark"></div></article>
-      <article class="stat panel"><span class="eyebrow">PRESSURE</span><strong id="pressure">—</strong><small>hPa</small><div class="spark" id="pressureSpark"></div></article>
-      <article class="stat panel"><span class="eyebrow">STREAM RATE</span><strong id="streamRate">0</strong><small>packets/s</small><div class="rate-bar"><i id="rateBar"></i></div></article>
-    </section>
+      <!-- Altitude Gauge -->
+      <article class="panel panel-gauge">
+        <div class="panel-head">
+          <span class="eyebrow">BAROMETRIC ALTITUDE</span>
+        </div>
+        <div class="gauge-container">
+          <svg id="altGauge" viewBox="0 0 120 300" class="alt-gauge">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stop-color="#26DE81"/>
+                <stop offset="50%" stop-color="#00D4FF"/>
+                <stop offset="100%" stop-color="#FFB800"/>
+              </linearGradient>
+              <clipPath id="trackClip">
+                <rect x="52" y="20" width="16" height="260" rx="8"/>
+              </clipPath>
+            </defs>
+            <!-- Track background -->
+            <rect x="52" y="20" width="16" height="260" rx="8" fill="#1a2535"/>
+            <!-- Fill (grows from bottom) -->
+            <rect id="altFill" x="52" y="280" width="16" height="0" rx="8" fill="url(#gaugeGrad)" clip-path="url(#trackClip)"/>
+            <!-- Tick marks with labels -->
+            <g class="alt-ticks" font-family="JetBrains Mono" font-size="8" fill="#5a7a9a">
+              <!-- 0m -->
+              <line x1="48" y1="280" x2="52" y2="280" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="283" text-anchor="end">0</text>
+              <!-- 100m -->
+              <line x1="48" y1="228" x2="52" y2="228" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="231" text-anchor="end">100</text>
+              <!-- 200m -->
+              <line x1="48" y1="176" x2="52" y2="176" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="179" text-anchor="end">200</text>
+              <!-- 300m -->
+              <line x1="48" y1="124" x2="52" y2="124" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="127" text-anchor="end">300</text>
+              <!-- 400m -->
+              <line x1="48" y1="72" x2="52" y2="72" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="75" text-anchor="end">400</text>
+              <!-- 500m -->
+              <line x1="48" y1="20" x2="52" y2="20" stroke="#3a5a7a" stroke-width="1"/>
+              <text x="44" y="23" text-anchor="end">500</text>
+              <!-- Minor ticks -->
+              <line x1="50" y1="254" x2="52" y2="254" stroke="#2a4a6a" stroke-width="0.5"/>
+              <line x1="50" y1="202" x2="52" y2="202" stroke="#2a4a6a" stroke-width="0.5"/>
+              <line x1="50" y1="150" x2="52" y2="150" stroke="#2a4a6a" stroke-width="0.5"/>
+              <line x1="50" y1="98" x2="52" y2="98" stroke="#2a4a6a" stroke-width="0.5"/>
+              <line x1="50" y1="46" x2="52" y2="46" stroke="#2a4a6a" stroke-width="0.5"/>
+            </g>
+            <!-- Pointer -->
+            <polygon id="altPointer" points="68,275 74,280 68,285" fill="#00D4FF"/>
+            <!-- Value display -->
+            <text id="altGaugeVal" x="60" y="298" text-anchor="middle" fill="#E8F0FE" font-family="JetBrains Mono" font-size="11" font-weight="600">0 m</text>
+          </svg>
+        </div>
+      </article>
 
-    <section class="panel console"><div class="panel-head"><div><span class="eyebrow">EVENT STREAM</span><h2>System console</h2></div><button id="clearLog" class="icon-btn">Clear</button></div><div id="log" class="log"></div></section>
+      <!-- Signal & Health -->
+      <article class="panel panel-health">
+        <div class="panel-head">
+          <span class="eyebrow">SYSTEM HEALTH</span>
+        </div>
+        <div class="health-grid">
+          <div class="health-cell">
+            <span class="eyebrow">PACKETS</span>
+            <span class="mono val" id="packets">0</span>
+          </div>
+          <div class="health-cell">
+            <span class="eyebrow">STREAM</span>
+            <span class="mono val" id="streamRate">0<span class="unit">/s</span></span>
+          </div>
+          <div class="health-cell">
+            <span class="eyebrow">SIGNAL</span>
+            <div class="signal-bars">
+              <div class="signal-bar" id="sig1"></div>
+              <div class="signal-bar" id="sig2"></div>
+              <div class="signal-bar" id="sig3"></div>
+              <div class="signal-bar" id="sig4"></div>
+            </div>
+          </div>
+          <div class="health-cell full">
+            <div class="rate-bar"><i id="rateBar"></i></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Event Log -->
+      <article class="panel panel-log">
+        <div class="panel-head">
+          <span class="eyebrow">EVENT STREAM</span>
+          <button id="clearLog" class="btn-icon">CLR</button>
+        </div>
+        <div id="log" class="log"></div>
+      </article>
+    </aside>
+
   </main>
 </div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/static/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
 </body>
 </html>
