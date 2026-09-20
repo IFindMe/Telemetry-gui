@@ -427,6 +427,7 @@ function initRocket3D() {
 
   // ── Build Rocket ──
   rocketGroup = new THREE.Group();
+  rocketGroup.scale.setScalar(1.2);
 
   // Body (cylinder)
   const bodyGeo = new THREE.CylinderGeometry(0.3, 0.35, 3.5, 16);
@@ -520,14 +521,14 @@ function updateRocket(d) {
   // Track max altitude for scaling
   if (alt > S.maxAlt) S.maxAlt = Math.max(alt, 100);
 
-  // ── Vertical position (ground view: rocket rises away from camera) ──
+  // ── Vertical position ──
   const altNorm = Math.min(alt / S.maxAlt, 1.0);
-  const targetY = altNorm * 14;  // rocket goes from 0 to 14 units up
+  const targetY = altNorm * 10;
   rocketGroup.position.y += (targetY - rocketGroup.position.y) * 0.15;
 
-  // ── Shrink as it goes up (perspective illusion) ──
-  const scale = 1.0 - altNorm * 0.5;  // shrinks to 50% at max alt
-  rocketGroup.scale.setScalar(Math.max(scale, 0.35));
+  // ── Shrink as it goes up (gentle) ──
+  const scale = 1.0 - altNorm * 0.2;
+  rocketGroup.scale.setScalar(Math.max(scale, 0.55));
 
   // ── Camera tilt (subtle, keeps rocket in frame) ──
   const lookY = 5 + altNorm * 10;
