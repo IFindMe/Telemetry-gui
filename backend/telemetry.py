@@ -95,10 +95,10 @@ class TelemetrySample:
             TelemetrySample._current_phase = "PRE-FLIGHT"
             TelemetrySample._phase_lock_count = 0
 
-        # Actual dt from sample timestamps
+        # Actual dt from MCU timestamps (handles lost packets correctly)
         dt = now - TelemetrySample._prev_time
-        if dt <= 0 or dt > 1.0:
-            dt = 0.01  # fallback ~100Hz
+        if dt <= 0:
+            dt = 0.01  # duplicate/out-of-order sample — use fallback
         TelemetrySample._prev_time = now
 
         # ── Barometric altitude ──
@@ -126,6 +126,9 @@ class TelemetrySample:
             dt_actual = max(dt, 0.001)  # prevent division by zero
             raw_vel = (self.altitude - TelemetrySample._prev_alt) / dt_actual
             TelemetrySample._prev_alt = self.altitude
+
+            # Clamp raw velocity to prevent spikes from lost packets (>200 m/s is unrealistic)
+            raw_vel = max(-200.0, min(200.0, raw_vel))
 
             # EMA low-pass filter (alpha=0.3 → responsive but smooth)
             TelemetrySample.smooth_velocity = 0.3 * raw_vel + 0.7 * TelemetrySample.smooth_velocity
