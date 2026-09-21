@@ -213,22 +213,35 @@
         </div>
       </article>
 
+      <!-- Smooth Control -->
+      <article class="panel panel-smooth">
+        <div class="panel-head">
+          <span class="eyebrow">SMOOTH</span>
+        </div>
+        <div class="smooth-btns">
+          <button class="smooth-btn" data-level="OFF">OFF</button>
+          <button class="smooth-btn" data-level="LOW">LOW</button>
+          <button class="smooth-btn" data-level="MED">MED</button>
+          <button class="smooth-btn active" data-level="HIGH">HIGH</button>
+        </div>
+      </article>
+
       <!-- Raw Data -->
       <article class="panel panel-raw">
         <div class="panel-head">
           <span class="eyebrow">RAW TELEMETRY</span>
         </div>
         <div class="raw-grid">
-          <div class="raw-cell"><span class="eyebrow">ACCEL X</span><span class="mono" id="rawAccelX">—</span><span class="unit">m/s²</span></div>
-          <div class="raw-cell"><span class="eyebrow">ACCEL Y</span><span class="mono" id="rawAccelY">—</span><span class="unit">m/s²</span></div>
-          <div class="raw-cell"><span class="eyebrow">ACCEL Z</span><span class="mono" id="rawAccelZ">—</span><span class="unit">m/s²</span></div>
-          <div class="raw-cell"><span class="eyebrow">GYRO X</span><span class="mono" id="rawGyroX">—</span><span class="unit">°/s</span></div>
-          <div class="raw-cell"><span class="eyebrow">GYRO Y</span><span class="mono" id="rawGyroY">—</span><span class="unit">°/s</span></div>
-          <div class="raw-cell"><span class="eyebrow">GYRO Z</span><span class="mono" id="rawGyroZ">—</span><span class="unit">°/s</span></div>
-          <div class="raw-cell"><span class="eyebrow">LATITUDE</span><span class="mono" id="rawLat">—</span><span class="unit">°</span></div>
-          <div class="raw-cell"><span class="eyebrow">LONGITUDE</span><span class="mono" id="rawLon">—</span><span class="unit">°</span></div>
-          <div class="raw-cell"><span class="eyebrow">GPS ALT</span><span class="mono" id="rawGpsAlt">—</span><span class="unit">m</span></div>
-          <div class="raw-cell"><span class="eyebrow">GND SPEED</span><span class="mono" id="rawGndSpeed">—</span><span class="unit">m/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">ACCEL X</span><span class="mono" id="rawAccelX">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">ACCEL Y</span><span class="mono" id="rawAccelY">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">ACCEL Z</span><span class="mono" id="rawAccelZ">0.00</span><span class="unit">m/s²</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO X</span><span class="mono" id="rawGyroX">0.00</span><span class="unit">°/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO Y</span><span class="mono" id="rawGyroY">0.00</span><span class="unit">°/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">GYRO Z</span><span class="mono" id="rawGyroZ">0.00</span><span class="unit">°/s</span></div>
+          <div class="raw-cell"><span class="eyebrow">LATITUDE</span><span class="mono" id="rawLat">0.000000</span><span class="unit">°</span></div>
+          <div class="raw-cell"><span class="eyebrow">LONGITUDE</span><span class="mono" id="rawLon">0.000000</span><span class="unit">°</span></div>
+          <div class="raw-cell"><span class="eyebrow">GPS ALT</span><span class="mono" id="rawGpsAlt">0.00</span><span class="unit">m</span></div>
+          <div class="raw-cell"><span class="eyebrow">GND SPEED</span><span class="mono" id="rawGndSpeed">0.00</span><span class="unit">m/s</span></div>
         </div>
       </article>
     </aside>
@@ -246,21 +259,19 @@
             </div>
             <span class="live-pill">LIVE</span>
           </div>
-          <div id="rocket3d" class="rocket-viewport">
-            <div id="freezeOverlay" class="freeze-overlay hidden">NO DATA</div>
-          </div>
+          <div id="rocket3d" class="rocket-viewport"></div>
           <div class="attitude-readout">
             <div class="attitude-axis">
               <span class="eyebrow">ROLL</span>
-              <span class="mono val" id="roll">—</span>
+              <span class="mono val" id="roll">0.00°</span>
             </div>
             <div class="attitude-axis">
               <span class="eyebrow">PITCH</span>
-              <span class="mono val" id="pitch">—</span>
+              <span class="mono val" id="pitch">0.00°</span>
             </div>
             <div class="attitude-axis">
               <span class="eyebrow">YAW</span>
-              <span class="mono val" id="yaw">—</span>
+              <span class="mono val" id="yaw">0.00°</span>
             </div>
           </div>
         </article>
@@ -286,12 +297,12 @@
       <div class="telemetry-strip">
         <div class="strip-cell">
           <span class="eyebrow">ALTITUDE</span>
-          <span class="mono val large" id="altitude">—</span>
+          <span class="mono val large" id="altitude">0</span>
           <span class="unit">m</span>
         </div>
         <div class="strip-cell">
           <span class="eyebrow">Z-VELOCITY</span>
-          <span class="mono val large" id="velocity">—</span>
+          <span class="mono val large" id="velocity">0.0</span>
           <span class="unit">m/s</span>
         </div>
         <div class="strip-cell">
@@ -311,7 +322,7 @@
         </div>
         <div class="strip-cell">
           <span class="eyebrow">G-FORCE</span>
-          <span class="mono val" id="gforce">—</span>
+          <span class="mono val" id="gforce">1.00</span>
           <span class="unit">G</span>
         </div>
       </div>
@@ -409,7 +420,7 @@
             <!-- Pointer -->
             <polygon id="altPointer" points="74,275 68,280 74,285" fill="#00D4FF"/>
             <!-- Value display -->
-            <text id="altGaugeVal" x="60" y="298" text-anchor="middle" fill="#E8F0FE" font-family="JetBrains Mono" font-size="11" font-weight="600">—</text>
+            <text id="altGaugeVal" x="60" y="298" text-anchor="middle" fill="#E8F0FE" font-family="JetBrains Mono" font-size="11" font-weight="600">0 m</text>
           </svg>
         </div>
       </article>

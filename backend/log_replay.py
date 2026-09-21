@@ -26,11 +26,6 @@ class LogReplayer:
         self._samples: list[dict] = []
         self._index = 0
         self._log_path: Optional[str] = None
-        self._recompute = False
-
-    # Derived columns written by LogWriter that verbatim replay restores
-    # instead of recomputing (D2-2c/2d).
-    _DERIVED_COLS = ("velocity", "gforce", "flight_phase")
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -52,20 +47,13 @@ class LogReplayer:
         log_path: str,
         on_sample: Callable,
         speed: float = 1.0,
-        recompute: bool = False,
     ):
-        """Begin replaying *log_path* at *speed*× through *on_sample*.
-
-        recompute=False (default, D2-2c/2d verbatim): derived columns are
-        restored from the row. recompute=True: rows pass through
-        un-derived so the funnel sample_handler derives them once.
-        """
+        """Begin replaying *log_path* at *speed*× through *on_sample*."""
         if self._running:
             await self.stop()
 
         self._on_sample = on_sample
         self._speed = max(0.1, min(10.0, speed))
-        self._recompute = recompute
         self._log_path = log_path
         self._paused = False
         self._index = 0
@@ -104,10 +92,8 @@ class LogReplayer:
         for i, row in enumerate(self._samples):
             if float(row.get("time", 0)) >= timestamp:
                 self._index = i
-                self._reanchor()
                 return
         self._index = len(self._samples)  # past end → stop
-        self._reanchor()
 
     def seek_fraction(self, fraction: float):
         """Jump to a position by fraction (0.0 – 1.0) of total samples."""
@@ -115,31 +101,6 @@ class LogReplayer:
             return
         self._index = int(fraction * len(self._samples))
         self._index = max(0, min(self._index, len(self._samples)))
-        self._reanchor()
-
-    def _reanchor(self):
-        """D2-2f: re-seed derivation anchors at the current index so the
-        next computed velocity (recompute mode) doesn't spike, and set
-        _max_altitude to the prefix max over rows [0..index]."""
-        if not self._samples:
-            return
-        i = max(0, min(self._index, len(self._samples) - 1))
-        try:
-            TelemetrySample._prev_time = float(self._samples[i].get("time", 0))
-        except (ValueError, TypeError):
-            TelemetrySample._prev_time = 0.0
-        try:
-            TelemetrySample._prev_alt = float(self._samples[i].get("altitude", 0))
-        except (ValueError, TypeError):
-            TelemetrySample._prev_alt = 0.0
-        TelemetrySample._initialized = True
-        prefix_max = 0.0
-        for row in self._samples[: i + 1]:
-            try:
-                prefix_max = max(prefix_max, float(row.get("altitude", 0)))
-            except (ValueError, TypeError):
-                continue
-        TelemetrySample._max_altitude = prefix_max
 
     def set_speed(self, speed: float):
         """Change replay speed (0.1 – 10.0)."""
@@ -178,44 +139,29 @@ class LogReplayer:
                 rows.append(row)
         return rows
 
-    def _row_to_sample(self, row: dict) -> Optional[TelemetrySample]:
-        """Convert a CSV row dict to a TelemetrySample.
-
-        Strict: every base FIELDS column must be present and numeric.
-        A missing/empty/corrupt column returns None (row skipped) —
-        never a silent 0, which would fabricate telemetry on the
-        dashboard. Same bug class as the telemetry.py zero-pad.
-        """
-        base = {}
-        for k in FIELDS:
-            v = row.get(k)
-            if v is None or v == "":
-                return None
-            try:
-                base[k] = float(v)
-            except (ValueError, TypeError):
-                return None
+    def _row_to_sample(self, row: dict) -> TelemetrySample:
+        """Convert a CSV row dict to a TelemetrySample."""
+        # Always populate the 10 base fields
+        base = {k: float(row.get(k, 0)) for k in FIELDS}
         sample = TelemetrySample(**base)
 
-        # D2-2d (dead branch inverted): the old `if "altitude" not in row`
-        # never fired because altitude is always in FIELDS. Test derived
-        # columns instead — restore when present, compute only when absent.
-        derived_present = all(
-            k in row and row[k] not in (None, "") for k in self._DERIVED_COLS
-        )
-        if derived_present and not self._recompute:
-            # D2-2c verbatim: reproduce the recorded flight bit-for-bit.
+        # If derived columns are present, set them directly
+        if "altitude" in row:
+            sample.altitude = float(row["altitude"])
+        if "velocity" in row:
             sample.velocity = float(row["velocity"])
+        if "smooth_velocity" in row:
+            sample.smooth_velocity = float(row["smooth_velocity"])
+        if "gforce" in row:
             sample.gforce = float(row["gforce"])
+        if "flight_phase" in row:
             sample.flight_phase = row["flight_phase"]
-            if "max_altitude" in row and row["max_altitude"] not in (None, ""):
-                TelemetrySample._max_altitude = float(row["max_altitude"])
-        elif not self._recompute:
-            # Derived columns absent (pre-derived-column log): derive once
-            # here — replay_handler never calls compute_derived() (D2-2c).
+        if "max_altitude" in row:
+            TelemetrySample.max_altitude = float(row["max_altitude"])
+
+        # If derived fields are missing, compute them
+        if "altitude" not in row:
             sample.compute_derived()
-        # Recompute mode: restore nothing, compute nothing — the funnel
-        # sample_handler performs the single compute_derived() (D2-2a).
 
         return sample
 
@@ -229,9 +175,6 @@ class LogReplayer:
             row = self._samples[self._index]
             sample = self._row_to_sample(row)
             self._index += 1
-
-            if sample is None:
-                continue
 
             if self._on_sample:
                 await self._on_sample(sample)

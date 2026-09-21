@@ -5,36 +5,21 @@
 
 const $ = id => document.getElementById(id);
 
-// S5: tiny element cache — update() runs per packet, skip repeated DOM lookups.
-// Static page: IDs never appear late, so caching null is safe.
-const elCache = {};
-function el(id) {
-  if (!(id in elCache)) elCache[id] = $(id) || null;
-  return elCache[id];
-}
-
 // ═══ STATE ═══
 const history = {
   accelX: [], accelY: [], accelZ: [],
   gyroX: [], gyroY: [], gyroZ: [],
-  altitude: [], velocity: [],
+  altitude: [],
 };
 const MAX = 180;
 let ws = null, lastPacket = performance.now(), packetsWindow = 0, lastRateTime = performance.now();
-let metStartMcu = null;   // first MCU timestamp received
-let lastMcuTime = 0;       // last MCU timestamp (for duplicate detection)
-let frozen = false;         // true when no data for >2s
-let freezeTimeout = null;
+let metStart = null;
 let androidActive = false;
 let simPaused = false;
 const phaseReached = {};
 let replaying = false;
 let replayPaused = false;
 let activeSourceTab = 'serial';
-let simulating = false;   // S4: declared with state (was :318) — refreshStatus() reads it
-let chartsDirty = true;     // S5: set by update(), consumed by frame() — no new data, no redraw
-let lastPhaseShown = null;  // S5: skip phase DOM churn when phase unchanged
-let lastMetSecond = -1;     // S5: MET text updates 1×/s, not per packet
 
 // ═══ UTILITIES ═══
 function log(msg, kind = '') {
@@ -56,20 +41,7 @@ async function api(url, opts = {}) {
   return r.json();
 }
 
-function val(id, v, dec = 2) {
-  const e = el(id);
-  if (!e) return;   // S4: one missing element must not abort the packet's render
-  const s = Number(v).toFixed(dec);
-  if (e.textContent !== s) e.textContent = s;   // S5: skip redundant writes
-}
-
-// Hold-last-known guard: a missing (null/undefined/'') or NaN telemetry
-// field keeps the previously displayed value instead of writing 0/NaN.
-// Legit 0 (incl. 0 g in free-fall) IS present — never use `||` here.
-function present(v) {
-  if (v === null || v === undefined || v === '') return false;
-  return !Number.isNaN(Number(v));
-}
+function val(id, v, dec = 2) { $(id).textContent = Number(v).toFixed(dec); }
 
 // ═══ PORT REFRESH ═══
 async function refreshPorts() {
@@ -114,6 +86,11 @@ async function refreshStatus() {
   if (s.sim_paused !== undefined) {
     simPaused = s.sim_paused;
     $('simPause').textContent = simPaused ? '❚❚ RESUME' : '❚❚ PAUSE';
+  }
+
+  // Smooth level
+  if (s.smooth_level !== undefined) {
+    document.querySelectorAll('.smooth-btn').forEach(b => b.classList.toggle('active', b.dataset.level === s.smooth_level));
   }
 
   // Android IMU state
@@ -164,6 +141,7 @@ $('connect').onclick = async () => {
     } else {
       await api('/api/connect', { method: 'POST', body: JSON.stringify({ port: $('port').value, baud: Number($('baud').value) }) });
       log('Serial link opened', 'good');
+      metStart = performance.now();
     }
     await refreshStatus();
   } catch (e) { log('Connection: ' + e, 'warn'); }
@@ -293,6 +271,17 @@ $('simPause').onclick = async () => {
   } catch (e) { log('Sim pause: ' + e, 'warn'); }
 };
 
+// ═══ SMOOTH CONTROL ═══
+document.querySelectorAll('.smooth-btn').forEach(btn => {
+  btn.onclick = async () => {
+    try {
+      await api('/api/smooth', { method: 'POST', body: JSON.stringify({ level: btn.dataset.level }) });
+      document.querySelectorAll('.smooth-btn').forEach(b => b.classList.toggle('active', b === btn));
+      log('Smooth → ' + btn.dataset.level);
+    } catch (e) { log('Smooth: ' + e, 'warn'); }
+  };
+});
+
 // ═══ LOG REPLAY ═══
 async function refreshLogs() {
   try {
@@ -340,7 +329,8 @@ document.querySelectorAll('.replay-speed-btn').forEach(btn => {
 });
 
 // ═══ SIMULATION ═══
-// (S4: `let simulating` lives in STATE above — declare-before-use for refreshStatus)
+let simulating = false;
+
 $('simBtn').onclick = async () => {
   try {
     simulating = !simulating;
@@ -359,81 +349,60 @@ $('simBtn').onclick = async () => {
 
 // ═══ TELEMETRY UPDATE ═══
 function push(k, v) {
-  if (!history[k]) return;
   history[k].push(v);
   if (history[k].length > MAX) history[k].shift();
 }
 
 function update(d) {
-  // ── Duplicate / freeze logic ──
-  if (d.time === lastMcuTime) return;   // same packet, skip
-  lastMcuTime = d.time;
-  frozen = false;
-  const fo = el('freezeOverlay');   // S5: cached + conditional — was 2 uncached lookups/packet
-  if (fo && !fo.classList.contains('hidden')) fo.classList.add('hidden');
-  clearTimeout(freezeTimeout);
-  freezeTimeout = setTimeout(() => {
-    frozen = true;
-    const fo2 = el('freezeOverlay');
-    if (fo2) fo2.classList.remove('hidden');
-  }, 2000);
+  // Push history
+  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => push(k, d[k]));
+  push('altitude', d.altitude || 0);
 
-  // ── MET clock — MCU time ──
-  if (metStartMcu === null) metStartMcu = d.time;
+  // Use backend-computed derived values
+  const alt = d.altitude || 0;
+  const vel = d.velocity || 0;
+  const gf = d.gforce || 1;
 
-  // Hold-last-known: a missing field skips its write, so the DOM and
-  // history keep the previous value instead of rendering 0. Presence
-  // checks (not `||`) preserve legit 0 — incl. 0 g in free-fall.
-  const alt = present(d.altitude) ? Number(d.altitude) : null;
-  const vel = present(d.velocity) ? Number(d.velocity) : null;
-  const gf = present(d.gforce) ? Number(d.gforce) : null;
-
-  // Push history (skip missing — charts hold their tail)
-  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => { if (present(d[k])) push(k, Number(d[k])); });
-  if (alt !== null) push('altitude', alt);
-  if (vel !== null) push('velocity', vel);
-
-  // Update displays (skip missing — readouts hold last-known)
-  if (present(d.gyroX)) val('roll', d.gyroX);
-  if (present(d.gyroY)) val('pitch', d.gyroY);
-  if (present(d.gyroZ)) val('yaw', d.gyroZ);
-  if (present(d.imuTemp)) val('imuTemp', d.imuTemp, 1);
-  if (present(d.bmpTemp)) val('bmpTemp', d.bmpTemp, 1);
-  if (present(d.bmpPressure)) val('pressure', d.bmpPressure, 1);
-  if (alt !== null) val('altitude', alt, 0);
-  if (vel !== null) val('velocity', vel, 1);
-  if (gf !== null) val('gforce', gf, 2);
+  // Update displays
+  val('roll', d.gyroX);
+  val('pitch', d.gyroY);
+  val('yaw', d.gyroZ);
+  val('imuTemp', d.imuTemp, 1);
+  val('bmpTemp', d.bmpTemp, 1);
+  val('pressure', d.bmpPressure, 1);
+  val('altitude', alt, 0);
+  val('velocity', vel, 1);
+  val('gforce', gf, 2);
 
   // Raw data
-  if (present(d.accelX)) val('rawAccelX', d.accelX);
-  if (present(d.accelY)) val('rawAccelY', d.accelY);
-  if (present(d.accelZ)) val('rawAccelZ', d.accelZ);
-  if (present(d.gyroX)) val('rawGyroX', d.gyroX);
-  if (present(d.gyroY)) val('rawGyroY', d.gyroY);
-  if (present(d.gyroZ)) val('rawGyroZ', d.gyroZ);
-  if (present(d.latitude)) val('rawLat', d.latitude, 6);
-  if (present(d.longitude)) val('rawLon', d.longitude, 6);
-  if (alt !== null) val('rawGpsAlt', d.altitude, 2);
-  if (present(d.groundSpeed)) val('rawGndSpeed', d.groundSpeed, 2);
+  val('rawAccelX', d.accelX);
+  val('rawAccelY', d.accelY);
+  val('rawAccelZ', d.accelZ);
+  val('rawGyroX', d.gyroX);
+  val('rawGyroY', d.gyroY);
+  val('rawGyroZ', d.gyroZ);
+  val('rawLat', d.latitude, 6);
+  val('rawLon', d.longitude, 6);
+  val('rawGpsAlt', d.altitude, 2);
+  val('rawGndSpeed', d.groundSpeed, 2);
 
-  // Update 3D rocket (holds internally on missing fields)
+  // Update 3D rocket
   updateRocket(d);
 
-  // Update artificial horizon (skip when attitude missing — holds)
-  if (present(d.gyroY) && present(d.gyroX)) updateHorizon(d.gyroY, d.gyroX);
+  // Update artificial horizon
+  updateHorizon(d.gyroY, d.gyroX);
 
-  // Update altitude gauge (skip when missing — holds)
-  if (alt !== null) updateAltGauge(alt);
+  // Update altitude gauge
+  updateAltGauge(alt);
 
-  // Update flight phase from backend (missing holds last phase)
-  updateFlightPhaseDisplay(d.flight_phase ?? lastPhaseShown ?? 'STANDBY');
+  // Update flight phase from backend
+  updateFlightPhaseDisplay(d.flight_phase || 'STANDBY');
 
   // Update MET clock
   updateMET();
 
   packetsWindow++;
   lastPacket = performance.now();
-  chartsDirty = true;   // S5: charts redraw on new data only (consumed by frame())
 }
 
 // ═══ THREE.JS — 3D ROCKET ═══
@@ -577,21 +546,14 @@ function initRocket3D() {
 function updateRocket(d) {
   if (!rocketGroup) return;
 
+  const alt = d.altitude || 0;
+  const vel = d.velocity || 0;
+  const phase = d.flight_phase || 'PRE-FLIGHT';
+  const ax = d.accelX || 0;
+  const ay = d.accelY || 0;
+  const gz = d.gyroZ || 0;
   const now = performance.now() / 1000;
   const S = rocketState;
-
-  // Hold-last-known: a missing field reuses previous state instead of
-  // snapping the rocket to the ground (alt 0) on a degraded packet.
-  // ax/ay/gz feed only wobble deltas, so a neutral 0 is safe for them.
-  const alt = present(d.altitude) ? Number(d.altitude) : S.altitude;
-  const vel = present(d.velocity) ? Number(d.velocity) : S.velocity;
-  const phase = d.flight_phase ?? S.phase;
-  const ax = present(d.accelX) ? Number(d.accelX) : 0;
-  const ay = present(d.accelY) ? Number(d.accelY) : 0;
-  const gz = present(d.gyroZ) ? Number(d.gyroZ) : 0;
-  S.altitude = alt;
-  S.velocity = vel;
-  S.phase = phase;
 
   // Track max altitude for scaling
   if (alt > S.maxAlt) S.maxAlt = Math.max(alt, 100);
@@ -727,9 +689,9 @@ function updateAltGauge(alt) {
   const fillH = pct * 260;
   const pointerY = 280 - fillH; // pointer moves up as altitude increases
 
-  const fill = el('altFill');
-  const pointer = el('altPointer');
-  const val = el('altGaugeVal');
+  const fill = $('altFill');
+  const pointer = $('altPointer');
+  const val = $('altGaugeVal');
 
   if (fill) {
     // Fill from bottom: keep y=280, grow height upward
@@ -745,23 +707,6 @@ function updateAltGauge(alt) {
 
 // ═══ FLIGHT PHASE ═══
 function updateFlightPhaseDisplay(phase) {
-  // Record timestamp when each phase is first reached (once per phase — always runs)
-  const timeMap = { 'PRE-FLIGHT': 'phasePre', 'IGNITION': 'phaseIgn', 'LIFTOFF': 'phaseLife', 'ASCENT': 'phaseAsc', 'APOGEE': 'phaseApo', 'DESCENT': 'phaseDes', 'RECOVERY': 'phaseRec' };
-  const id = timeMap[phase];
-  let firstReach = false;
-  if (id && !phaseReached[id]) {
-    phaseReached[id] = true;
-    firstReach = true;
-    const el = $(id);
-    if (el) {
-      const now = new Date();
-      el.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-    }
-  }
-  // S5: phase pill/list DOM only changes on phase transition — skip per-packet churn
-  if (phase === lastPhaseShown && !firstReach) return;
-  lastPhaseShown = phase;
-
   const phaseEl = $('flightPhase');
   const phaseText = $('phaseText');
 
@@ -781,20 +726,28 @@ function updateFlightPhaseDisplay(phase) {
     if (i < currentIdx) el.classList.add('done');
     else if (i === currentIdx) el.classList.add('active');
   });
+
+  // Record timestamp when each phase is first reached
+  const timeMap = { 'PRE-FLIGHT': 'phasePre', 'IGNITION': 'phaseIgn', 'LIFTOFF': 'phaseLife', 'ASCENT': 'phaseAsc', 'APOGEE': 'phaseApo', 'DESCENT': 'phaseDes', 'RECOVERY': 'phaseRec' };
+  const id = timeMap[phase];
+  if (id && !phaseReached[id]) {
+    phaseReached[id] = true;
+    const el = $(id);
+    if (el) {
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+  }
 }
 
-// ═══ MET CLOCK (MCU time) ═══
+// ═══ MET CLOCK ═══
 function updateMET() {
-  if (metStartMcu === null) return;
-  const metSeconds = Math.max(0, lastMcuTime - metStartMcu);
-  const whole = Math.floor(metSeconds);
-  if (whole === lastMetSecond) return;   // S5: text changes 1×/s, not per packet
-  lastMetSecond = whole;
-  const h = String(Math.floor(metSeconds / 3600)).padStart(2, '0');
-  const m = String(Math.floor((metSeconds % 3600) / 60)).padStart(2, '0');
-  const s = String(Math.floor(metSeconds % 60)).padStart(2, '0');
-  const metEl = el('met');
-  if (metEl) metEl.textContent = `T-${h}:${m}:${s}`;
+  if (!metStart) return;
+  const elapsed = Math.floor((performance.now() - metStart) / 1000);
+  const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+  const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+  const s = String(elapsed % 60).padStart(2, '0');
+  $('met').textContent = `T-${h}:${m}:${s}`;
 }
 
 // ═══ CHARTS ═══
@@ -845,7 +798,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = (j + MAX - a.length) / (MAX - 1) * w;   // S5: right-align short buffer (full buffer: identical to before)
+      const x = j / (MAX - 1) * w;
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -856,7 +809,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 4;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = (j + MAX - a.length) / (MAX - 1) * w;   // S5: right-align short buffer (full buffer: identical to before)
+      const x = j / (MAX - 1) * w;
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -887,18 +840,12 @@ function initPitchLines() {
 }
 
 // ═══ ANIMATION LOOP ═══
-// S5: redraw charts only when new data arrived (chartsDirty set by update()).
-// Previously: full clear + 2 polyline passes × 3 charts every rAF regardless.
 function frame() {
-  if (chartsDirty) {
-    chartsDirty = false;
-    drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
-    drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
-    drawChart('altChart', ['altitude'], ['#ffb800']);
-  }
+  drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
+  drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
+  drawChart('altChart', ['altitude'], ['#ffb800']);
   requestAnimationFrame(frame);
 }
-window.addEventListener('resize', () => { chartsDirty = true; });   // S5: re-render grid on resize even with no data
 
 // ═══ RATE DISPLAY ═══
 setInterval(() => {
@@ -918,12 +865,7 @@ function connectWS() {
   ws.onopen = () => log('WebSocket connected', 'good');
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if (m.type === 'history') {
-      // S5: backend keeps 1200 but charts hold MAX — replay only the tail so a
-      // fresh connect during 50 Hz sim doesn't synchronously fan out 1200 packets.
-      const arr = Array.isArray(m.data) ? m.data : [];
-      (arr.length > MAX ? arr.slice(-MAX) : arr).forEach(update);
-    }
+    if (m.type === 'history') m.data.forEach(update);
     else if (m.type === 'telemetry') update(m.data);
   };
   ws.onclose = () => { log('WebSocket disconnected', 'warn'); setTimeout(connectWS, 1500); };

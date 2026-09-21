@@ -16,7 +16,7 @@ Python FastAPI backend
     └── WebSocket
           │
           ▼
-    http://localhost:8181
+    http://localhost:8080
           │
           ▼
      Browser dashboard
@@ -38,15 +38,15 @@ Python FastAPI backend
 
 ## Telemetry format
 
-Each line must contain 14 comma-separated values:
+Each line must contain exactly 10 comma-separated values:
 
-`time,accelX,accelY,accelZ,gyroX,gyroY,gyroZ,imuTemp,bmpTemp,bmpPressure,latitude,longitude,altitude,groundSpeed`
+`time,accelX,accelY,accelZ,gyroX,gyroY,gyroZ,imuTemp,bmpTemp,bmpPressure`
 
 Example:
 
-`12.345678,0.012345,-0.023456,9.801234,0.120000,-0.330000,0.040000,31.25,30.90,1012.45,37.774900,-122.419400,150.25,12.60`
+`12.345678,0.012345,-0.023456,9.801234,0.120000,-0.330000,0.040000,31.25,30.90,1012.45`
 
-Older 10-field firmware output still parses — missing `latitude`, `longitude`, `altitude`, and `groundSpeed` default to `0.0` (`backend/telemetry.py:58-69`). To send full packets, append the four GPS fields:
+Your existing firmware output is compatible:
 
 ```cpp
 return String(micros() / 1000000.0, 6) + ","
@@ -58,11 +58,7 @@ return String(micros() / 1000000.0, 6) + ","
      + String(gyroZ, 6) + ","
      + String(imuTemp, 2) + ","
      + String(bmpTemp, 2) + ","
-     + String(bmpPressure, 2) + ","
-     + String(latitude, 6) + ","
-     + String(longitude, 6) + ","
-     + String(altitude, 2) + ","
-     + String(groundSpeed, 2);
+     + String(bmpPressure, 2);
 ```
 
 ## Run
@@ -84,7 +80,7 @@ python run.py
 Open:
 
 ```
-http://localhost:8181
+http://localhost:8080
 ```
 
 On Linux, your user may need permission to access the serial device, for example by being in the `dialout` group.
@@ -109,4 +105,4 @@ Telemetry-gui/
 
 ## Remote access later
 
-The server binds to `0.0.0.0:8181` (`run.py:5`), so it is reachable on your LAN as `http://<host-ip>:8181`. Place the dashboard behind the network/VPN layer you trust.
+The server currently binds to `127.0.0.1:8080`. For LAN/VPN access, change the uvicorn host in `run.py` to `0.0.0.0`, then place the dashboard behind the network/VPN layer you trust.
