@@ -383,7 +383,9 @@ function update(d) {
   val('rawGyroZ', d.gyroZ);
   val('rawLat', d.latitude, 6);
   val('rawLon', d.longitude, 6);
-  val('rawGpsAlt', d.altitude, 2);
+  // Raw MCU GPS altitude only — hold last-known when absent (old logs,
+  // simulator); never fall back to fused/baro altitude for this cell.
+  if (d.gpsAltitude !== undefined && d.gpsAltitude !== null && d.gpsAltitude !== '') val('rawGpsAlt', d.gpsAltitude, 2);
   val('rawGndSpeed', d.groundSpeed, 2);
 
   // Update 3D rocket

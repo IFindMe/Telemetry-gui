@@ -16,6 +16,7 @@ from .telemetry import TelemetrySample, FIELDS
 ALL_FIELDS = FIELDS + [
     "velocity", "smooth_velocity",
     "gforce", "flight_phase", "max_altitude",
+    "gpsAltitude",
 ]
 
 

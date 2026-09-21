@@ -1,6 +1,7 @@
 import math
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 FIELDS = [
     "time", "accelX", "accelY", "accelZ",
@@ -46,6 +47,12 @@ class TelemetrySample:
     altitude: float = 0.0
     groundSpeed: float = 0.0
 
+    # Raw MCU GPS altitude, snapshotted in parse() before compute_derived()
+    # may overwrite self.altitude with the barometric solution.
+    # Never fused, never overwritten downstream — honest GPS readout
+    # (0.0 = no fix). None when unknown (e.g. old logs, simulator).
+    gpsAltitude: Optional[float] = None
+
     # Derived fields (per-sample)
     velocity: float = 0.0
     smooth_velocity: float = 0.0
@@ -77,7 +84,11 @@ class TelemetrySample:
             values = [float(p) for p in parts]
         except (ValueError, TypeError):
             return None
-        return cls(*values)
+        sample = cls(*values)
+        # Snapshot the raw MCU GPS altitude BEFORE compute_derived()
+        # overwrites self.altitude with the barometric solution.
+        sample.gpsAltitude = sample.altitude
+        return sample
 
     def compute_derived(self):
         """Compute altitude, velocity, g-force, and flight phase."""
@@ -245,6 +256,10 @@ class TelemetrySample:
     def as_dict(self):
         d = {field_name: getattr(self, field_name) for field_name in FIELDS}
         d["altitude"] = round(self.altitude, 2)
+        # Raw MCU GPS altitude — never baro-fused. Omitted when unknown
+        # (old logs, simulator) so the frontend holds last-known.
+        if self.gpsAltitude is not None:
+            d["gpsAltitude"] = round(self.gpsAltitude, 2)
         d["velocity"] = round(self.velocity, 2)
         d["smooth_velocity"] = round(self.smooth_velocity, 2)
         d["gforce"] = round(self.gforce, 3)

@@ -180,6 +180,16 @@ class LogReplayer:
                 TelemetrySample.max_altitude = self._strict_float(row["max_altitude"])
         except (ValueError, TypeError):
             return None
+        # gpsAltitude (raw MCU GPS altitude) is OPTIONAL — old logs lack
+        # the column. Missing/empty keeps None (frontend holds last-known,
+        # via as_dict omitting the key). Present-but-malformed rejects the
+        # row, like the other derived columns. Never fabricate 0.
+        try:
+            if "gpsAltitude" in row and row["gpsAltitude"] is not None \
+                    and str(row["gpsAltitude"]).strip() != "":
+                sample.gpsAltitude = self._strict_float(row["gpsAltitude"])
+        except (ValueError, TypeError):
+            return None
         if "flight_phase" in row and row["flight_phase"] not in (None, ""):
             sample.flight_phase = row["flight_phase"]
 
