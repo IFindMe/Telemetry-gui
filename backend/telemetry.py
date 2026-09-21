@@ -24,7 +24,7 @@ FIELDS = [
 PHASE_ORDER = ["PRE-FLIGHT", "IGNITION", "LIFTOFF", "ASCENT", "APOGEE", "DESCENT", "RECOVERY"]
 
 # Smoothing constants (module-level)
-SMOOTH_ALPHA = {"OFF": 1.0, "LOW": 0.5, "MED": 0.3, "HIGH": 0.1}
+SMOOTH_ALPHA = {"OFF": 1.0, "LOW": 0.3, "MED": 0.15, "HIGH": 0.05}
 _smooth_state = {"x": 0.0, "y": 0.0, "z": 0.0}
 _smooth_initialized = False
 
@@ -79,7 +79,11 @@ class TelemetrySample:
         # Pad to 14 fields if fewer were sent
         while len(values) < 14:
             values.append(0.0)
-        return cls(*values)
+        sample = cls(*values)
+        # Track whether MCU sends GPS altitude (14-field format)
+        if len(parts) >= 14:
+            TelemetrySample._mcu_alt_used = True
+        return sample
 
     def compute_derived(self):
         """Compute altitude, velocity, g-force, and flight phase."""
@@ -102,25 +106,19 @@ class TelemetrySample:
             dt = 0.01  # duplicate/out-of-order sample — use fallback
         TelemetrySample._prev_time = now
 
-        # ── Barometric altitude ──
+        # ── Altitude source ──
         if self._altitude_locked:
-            # Altitude set externally (e.g. by IMU integration) — skip barometric
+            pass  # altitude set externally (e.g. IMU integration)
+        elif TelemetrySample._mcu_alt_used:
+            # MCU sends 14-field format — always use MCU altitude (even if 0)
+            # Never compute from BMP pressure
             pass
-        elif self.altitude > 0:
-            # MCU sent altitude directly — use it, skip barometric calc
-            pass
-        elif TelemetrySample._mcu_alt_used and self.altitude == 0:
-            # GPS fix lost (altitude=0) — keep last known altitude, don't fall back to barometric
-            self.altitude = TelemetrySample._prev_alt
         elif self.bmpPressure > 0 and TelemetrySample._base_pressure > 0:
+            # Old 10-field firmware — compute from BMP
             ratio = self.bmpPressure / TelemetrySample._base_pressure
             self.altitude = 44330.0 * (1.0 - math.pow(max(ratio, 0.001), 1.0 / 5.255))
         else:
             self.altitude = 0.0
-
-        # Track whether MCU altitude has ever been used
-        if self.altitude > 0 and not self._altitude_locked:
-            TelemetrySample._mcu_alt_used = True
 
         # Clamp negative altitude to 0
         self.altitude = max(0.0, self.altitude)
