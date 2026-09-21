@@ -23,6 +23,11 @@ log_writer = LogWriter()
 clients = set()
 history = deque(maxlen=1200)
 
+# S5: WS join burst sends only what the frontend charts can hold (MAX=180 in
+# frontend/app.js). Bursting the full 1200-item deque through the per-packet
+# DOM fan-out froze fresh connects during 50 Hz sim. The deque keeps 1200.
+WS_HISTORY_BURST = 180
+
 # ═══ FUNNEL SEQUENCING (D3-3a) + SESSION RESET (D2-2e) ═══
 # Single global implementation: every broadcast payload AND history entry
 # gets (source, session, seq). Counters live here — never in the readers.
@@ -308,7 +313,7 @@ async def sim_pause(payload: dict):
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     clients.add(ws)
-    await ws.send_json({"type": "history", "data": list(history)})
+    await ws.send_json({"type": "history", "data": list(history)[-WS_HISTORY_BURST:]})
     try:
         while True:
             await ws.receive_text()

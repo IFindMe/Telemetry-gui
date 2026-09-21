@@ -5,6 +5,14 @@
 
 const $ = id => document.getElementById(id);
 
+// S5: tiny element cache — update() runs per packet, skip repeated DOM lookups.
+// Static page: IDs never appear late, so caching null is safe.
+const elCache = {};
+function el(id) {
+  if (!(id in elCache)) elCache[id] = $(id) || null;
+  return elCache[id];
+}
+
 // ═══ STATE ═══
 const history = {
   accelX: [], accelY: [], accelZ: [],
@@ -24,6 +32,9 @@ let replaying = false;
 let replayPaused = false;
 let activeSourceTab = 'serial';
 let simulating = false;   // S4: declared with state (was :318) — refreshStatus() reads it
+let chartsDirty = true;     // S5: set by update(), consumed by frame() — no new data, no redraw
+let lastPhaseShown = null;  // S5: skip phase DOM churn when phase unchanged
+let lastMetSecond = -1;     // S5: MET text updates 1×/s, not per packet
 
 // ═══ UTILITIES ═══
 function log(msg, kind = '') {
@@ -46,9 +57,10 @@ async function api(url, opts = {}) {
 }
 
 function val(id, v, dec = 2) {
-  const e = $(id);
+  const e = el(id);
   if (!e) return;   // S4: one missing element must not abort the packet's render
-  e.textContent = Number(v).toFixed(dec);
+  const s = Number(v).toFixed(dec);
+  if (e.textContent !== s) e.textContent = s;   // S5: skip redundant writes
 }
 
 // ═══ PORT REFRESH ═══
@@ -349,11 +361,13 @@ function update(d) {
   if (d.time === lastMcuTime) return;   // same packet, skip
   lastMcuTime = d.time;
   frozen = false;
-  document.getElementById('freezeOverlay').classList.add('hidden');
+  const fo = el('freezeOverlay');   // S5: cached + conditional — was 2 uncached lookups/packet
+  if (fo && !fo.classList.contains('hidden')) fo.classList.add('hidden');
   clearTimeout(freezeTimeout);
   freezeTimeout = setTimeout(() => {
     frozen = true;
-    document.getElementById('freezeOverlay').classList.remove('hidden');
+    const fo2 = el('freezeOverlay');
+    if (fo2) fo2.classList.remove('hidden');
   }, 2000);
 
   // ── MET clock — MCU time ──
@@ -409,6 +423,7 @@ function update(d) {
 
   packetsWindow++;
   lastPacket = performance.now();
+  chartsDirty = true;   // S5: charts redraw on new data only (consumed by frame())
 }
 
 // ═══ THREE.JS — 3D ROCKET ═══
@@ -695,9 +710,9 @@ function updateAltGauge(alt) {
   const fillH = pct * 260;
   const pointerY = 280 - fillH; // pointer moves up as altitude increases
 
-  const fill = $('altFill');
-  const pointer = $('altPointer');
-  const val = $('altGaugeVal');
+  const fill = el('altFill');
+  const pointer = el('altPointer');
+  const val = el('altGaugeVal');
 
   if (fill) {
     // Fill from bottom: keep y=280, grow height upward
@@ -713,6 +728,23 @@ function updateAltGauge(alt) {
 
 // ═══ FLIGHT PHASE ═══
 function updateFlightPhaseDisplay(phase) {
+  // Record timestamp when each phase is first reached (once per phase — always runs)
+  const timeMap = { 'PRE-FLIGHT': 'phasePre', 'IGNITION': 'phaseIgn', 'LIFTOFF': 'phaseLife', 'ASCENT': 'phaseAsc', 'APOGEE': 'phaseApo', 'DESCENT': 'phaseDes', 'RECOVERY': 'phaseRec' };
+  const id = timeMap[phase];
+  let firstReach = false;
+  if (id && !phaseReached[id]) {
+    phaseReached[id] = true;
+    firstReach = true;
+    const el = $(id);
+    if (el) {
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+  }
+  // S5: phase pill/list DOM only changes on phase transition — skip per-packet churn
+  if (phase === lastPhaseShown && !firstReach) return;
+  lastPhaseShown = phase;
+
   const phaseEl = $('flightPhase');
   const phaseText = $('phaseText');
 
@@ -732,28 +764,20 @@ function updateFlightPhaseDisplay(phase) {
     if (i < currentIdx) el.classList.add('done');
     else if (i === currentIdx) el.classList.add('active');
   });
-
-  // Record timestamp when each phase is first reached
-  const timeMap = { 'PRE-FLIGHT': 'phasePre', 'IGNITION': 'phaseIgn', 'LIFTOFF': 'phaseLife', 'ASCENT': 'phaseAsc', 'APOGEE': 'phaseApo', 'DESCENT': 'phaseDes', 'RECOVERY': 'phaseRec' };
-  const id = timeMap[phase];
-  if (id && !phaseReached[id]) {
-    phaseReached[id] = true;
-    const el = $(id);
-    if (el) {
-      const now = new Date();
-      el.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-    }
-  }
 }
 
 // ═══ MET CLOCK (MCU time) ═══
 function updateMET() {
   if (metStartMcu === null) return;
   const metSeconds = Math.max(0, lastMcuTime - metStartMcu);
+  const whole = Math.floor(metSeconds);
+  if (whole === lastMetSecond) return;   // S5: text changes 1×/s, not per packet
+  lastMetSecond = whole;
   const h = String(Math.floor(metSeconds / 3600)).padStart(2, '0');
   const m = String(Math.floor((metSeconds % 3600) / 60)).padStart(2, '0');
   const s = String(Math.floor(metSeconds % 60)).padStart(2, '0');
-  $('met').textContent = `T-${h}:${m}:${s}`;
+  const metEl = el('met');
+  if (metEl) metEl.textContent = `T-${h}:${m}:${s}`;
 }
 
 // ═══ CHARTS ═══
@@ -804,7 +828,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = j / (MAX - 1) * w;
+      const x = (j + MAX - a.length) / (MAX - 1) * w;   // S5: right-align short buffer (full buffer: identical to before)
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -815,7 +839,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 4;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = j / (MAX - 1) * w;
+      const x = (j + MAX - a.length) / (MAX - 1) * w;   // S5: right-align short buffer (full buffer: identical to before)
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -846,12 +870,18 @@ function initPitchLines() {
 }
 
 // ═══ ANIMATION LOOP ═══
+// S5: redraw charts only when new data arrived (chartsDirty set by update()).
+// Previously: full clear + 2 polyline passes × 3 charts every rAF regardless.
 function frame() {
-  drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
-  drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
-  drawChart('altChart', ['altitude'], ['#ffb800']);
+  if (chartsDirty) {
+    chartsDirty = false;
+    drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
+    drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
+    drawChart('altChart', ['altitude'], ['#ffb800']);
+  }
   requestAnimationFrame(frame);
 }
+window.addEventListener('resize', () => { chartsDirty = true; });   // S5: re-render grid on resize even with no data
 
 // ═══ RATE DISPLAY ═══
 setInterval(() => {
@@ -871,7 +901,12 @@ function connectWS() {
   ws.onopen = () => log('WebSocket connected', 'good');
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
-    if (m.type === 'history') m.data.forEach(update);
+    if (m.type === 'history') {
+      // S5: backend keeps 1200 but charts hold MAX — replay only the tail so a
+      // fresh connect during 50 Hz sim doesn't synchronously fan out 1200 packets.
+      const arr = Array.isArray(m.data) ? m.data : [];
+      (arr.length > MAX ? arr.slice(-MAX) : arr).forEach(update);
+    }
     else if (m.type === 'telemetry') update(m.data);
   };
   ws.onclose = () => { log('WebSocket disconnected', 'warn'); setTimeout(connectWS, 1500); };
