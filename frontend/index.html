@@ -213,19 +213,6 @@
         </div>
       </article>
 
-      <!-- Smooth Control -->
-      <article class="panel panel-smooth">
-        <div class="panel-head">
-          <span class="eyebrow">SMOOTH</span>
-        </div>
-        <div class="smooth-btns">
-          <button class="smooth-btn" data-level="OFF">OFF</button>
-          <button class="smooth-btn" data-level="LOW">LOW</button>
-          <button class="smooth-btn" data-level="MED">MED</button>
-          <button class="smooth-btn active" data-level="HIGH">HIGH</button>
-        </div>
-      </article>
-
       <!-- Raw Data -->
       <article class="panel panel-raw">
         <div class="panel-head">
@@ -259,7 +246,9 @@
             </div>
             <span class="live-pill">LIVE</span>
           </div>
-          <div id="rocket3d" class="rocket-viewport"></div>
+          <div id="rocket3d" class="rocket-viewport">
+            <div id="freezeOverlay" class="freeze-overlay hidden">NO DATA</div>
+          </div>
           <div class="attitude-readout">
             <div class="attitude-axis">
               <span class="eyebrow">ROLL</span>

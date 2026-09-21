@@ -195,6 +195,12 @@ class RocketSimulator:
         temp_imu = 25.0 - self.alt * 0.0065 + sensor_heat + n(0.3)
         temp_bmp = 24.5 - self.alt * 0.0065 + n(0.3)
 
+        # Simulate GPS-like coordinates (small drift around a fixed point)
+        base_lat = 34.0522  # example: Los Angeles
+        base_lon = -118.2437
+        lat = base_lat + self.alt * 0.00001 * math.sin(t * 0.1) + self._noise(0.00001)
+        lon = base_lon + self.alt * 0.00001 * math.cos(t * 0.1) + self._noise(0.00001)
+
         return TelemetrySample(
             time=round(t, 4),
             accelX=round(accel_x, 3),
@@ -206,6 +212,10 @@ class RocketSimulator:
             imuTemp=round(temp_imu, 2),
             bmpTemp=round(temp_bmp, 2),
             bmpPressure=round(pressure, 2),
+            latitude=round(lat, 6),
+            longitude=round(lon, 6),
+            altitude=round(self.alt, 2),
+            groundSpeed=round(abs(self.vel), 2),
         )
 
     async def _loop(self):

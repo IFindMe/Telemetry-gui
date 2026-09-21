@@ -28,7 +28,7 @@ class SerialReader:
 
     async def connect(self, port: str, baud: int):
         await self.disconnect()
-        TelemetrySample.reset_base_pressure()
+        TelemetrySample.reset()
         self.serial = serial.Serial(port, baud, timeout=0)
         self.port = port
         self.baud = baud

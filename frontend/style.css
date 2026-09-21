@@ -1080,48 +1080,18 @@ body::before {
   .topbar-center { display: none; }
 }
 
-/* ═══ SMOOTH CONTROL ═══ */
-.panel-smooth {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0;
-}
-.panel-smooth .panel-head {
-  padding: 10px 14px 0;
-}
-.smooth-btns {
+/* ═══ FREEZE OVERLAY ═══ */
+.freeze-overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
-  gap: 0;
-  padding: 8px 14px 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.6);
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  z-index: 50;
 }
-.smooth-btn {
-  flex: 1;
-  padding: 6px 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .5px;
-  cursor: pointer;
-  transition: all .15s;
-}
-.smooth-btn:first-child {
-  border-radius: 4px 0 0 4px;
-}
-.smooth-btn:last-child {
-  border-radius: 0 4px 4px 0;
-}
-.smooth-btn:not(:first-child) {
-  border-left: none;
-}
-.smooth-btn.active {
-  background: var(--cyan);
-  border-color: var(--cyan);
-  color: #000;
-}
-.smooth-btn:hover:not(.active) {
-  border-color: var(--cyan);
-  color: var(--cyan);
-}
+.freeze-overlay.hidden { display: none; }

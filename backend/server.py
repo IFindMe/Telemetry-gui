@@ -81,7 +81,6 @@ async def status():
         "replay_paused": log_replayer.paused,
         "replay_position": log_replayer.position,
         "replay_total": log_replayer.total_samples,
-        "smooth_level": TelemetrySample.get_smooth_level(),
     }
 
 
@@ -134,7 +133,7 @@ async def simulate(payload: dict):
         # Stop serial if connected
         if reader.connected:
             await reader.disconnect()
-        TelemetrySample.reset_base_pressure()
+        TelemetrySample.reset()
         await simulator.start()
         history.clear()
     else:
@@ -192,7 +191,7 @@ async def replay(payload: dict):
             await reader.disconnect()
         if android_imu.is_running:
             await android_imu.stop()
-        TelemetrySample.reset_base_pressure()
+        TelemetrySample.reset()
         history.clear()
         await log_replayer.start(log_file, sample_handler, speed)
     else:
@@ -244,13 +243,6 @@ async def sim_pause(payload: dict):
         simulator.pause()
     else:
         simulator.resume()
-    return await status()
-
-
-@app.post("/api/smooth")
-async def set_smooth(payload: dict):
-    level = payload.get("level", "HIGH")
-    TelemetrySample.set_smooth_level(level)
     return await status()
 
 

@@ -13,7 +13,10 @@ const history = {
 };
 const MAX = 180;
 let ws = null, lastPacket = performance.now(), packetsWindow = 0, lastRateTime = performance.now();
-let metStart = null;
+let metStartMcu = null;   // first MCU timestamp received
+let lastMcuTime = 0;       // last MCU timestamp (for duplicate detection)
+let frozen = false;         // true when no data for >2s
+let freezeTimeout = null;
 let androidActive = false;
 let simPaused = false;
 const phaseReached = {};
@@ -88,11 +91,6 @@ async function refreshStatus() {
     $('simPause').textContent = simPaused ? '❚❚ RESUME' : '❚❚ PAUSE';
   }
 
-  // Smooth level
-  if (s.smooth_level !== undefined) {
-    document.querySelectorAll('.smooth-btn').forEach(b => b.classList.toggle('active', b.dataset.level === s.smooth_level));
-  }
-
   // Android IMU state
   if (s.android_imu !== undefined) {
     androidActive = s.android_imu;
@@ -141,7 +139,6 @@ $('connect').onclick = async () => {
     } else {
       await api('/api/connect', { method: 'POST', body: JSON.stringify({ port: $('port').value, baud: Number($('baud').value) }) });
       log('Serial link opened', 'good');
-      metStart = performance.now();
     }
     await refreshStatus();
   } catch (e) { log('Connection: ' + e, 'warn'); }
@@ -271,17 +268,6 @@ $('simPause').onclick = async () => {
   } catch (e) { log('Sim pause: ' + e, 'warn'); }
 };
 
-// ═══ SMOOTH CONTROL ═══
-document.querySelectorAll('.smooth-btn').forEach(btn => {
-  btn.onclick = async () => {
-    try {
-      await api('/api/smooth', { method: 'POST', body: JSON.stringify({ level: btn.dataset.level }) });
-      document.querySelectorAll('.smooth-btn').forEach(b => b.classList.toggle('active', b === btn));
-      log('Smooth → ' + btn.dataset.level);
-    } catch (e) { log('Smooth: ' + e, 'warn'); }
-  };
-});
-
 // ═══ LOG REPLAY ═══
 async function refreshLogs() {
   try {
@@ -354,9 +340,24 @@ function push(k, v) {
 }
 
 function update(d) {
+  // ── Duplicate / freeze logic ──
+  if (d.time === lastMcuTime) return;   // same packet, skip
+  lastMcuTime = d.time;
+  frozen = false;
+  document.getElementById('freezeOverlay').classList.add('hidden');
+  clearTimeout(freezeTimeout);
+  freezeTimeout = setTimeout(() => {
+    frozen = true;
+    document.getElementById('freezeOverlay').classList.remove('hidden');
+  }, 2000);
+
+  // ── MET clock — MCU time ──
+  if (metStartMcu === null) metStartMcu = d.time;
+
   // Push history
   ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => push(k, d[k]));
   push('altitude', d.altitude || 0);
+  push('velocity', d.velocity || 0);
 
   // Use backend-computed derived values
   const alt = d.altitude || 0;
@@ -740,13 +741,13 @@ function updateFlightPhaseDisplay(phase) {
   }
 }
 
-// ═══ MET CLOCK ═══
+// ═══ MET CLOCK (MCU time) ═══
 function updateMET() {
-  if (!metStart) return;
-  const elapsed = Math.floor((performance.now() - metStart) / 1000);
-  const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-  const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-  const s = String(elapsed % 60).padStart(2, '0');
+  if (metStartMcu === null) return;
+  const metSeconds = Math.max(0, lastMcuTime - metStartMcu);
+  const h = String(Math.floor(metSeconds / 3600)).padStart(2, '0');
+  const m = String(Math.floor((metSeconds % 3600) / 60)).padStart(2, '0');
+  const s = String(Math.floor(metSeconds % 60)).padStart(2, '0');
   $('met').textContent = `T-${h}:${m}:${s}`;
 }
 

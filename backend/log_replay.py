@@ -150,14 +150,12 @@ class LogReplayer:
             sample.altitude = float(row["altitude"])
         if "velocity" in row:
             sample.velocity = float(row["velocity"])
-        if "smooth_velocity" in row:
-            sample.smooth_velocity = float(row["smooth_velocity"])
         if "gforce" in row:
             sample.gforce = float(row["gforce"])
         if "flight_phase" in row:
             sample.flight_phase = row["flight_phase"]
         if "max_altitude" in row:
-            TelemetrySample.max_altitude = float(row["max_altitude"])
+            TelemetrySample._max_altitude = float(row["max_altitude"])
 
         # If derived fields are missing, compute them
         if "altitude" not in row:

@@ -14,7 +14,7 @@ from .telemetry import TelemetrySample, FIELDS
 
 # All columns written by as_dict(), in the same order
 ALL_FIELDS = FIELDS + [
-    "velocity", "smooth_velocity",
+    "velocity",
     "gforce", "flight_phase", "max_altitude",
 ]
 
