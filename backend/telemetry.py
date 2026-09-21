@@ -5,6 +5,7 @@ from dataclasses import dataclass
 FIELDS = [
     "time", "accelX", "accelY", "accelZ",
     "gyroX", "gyroY", "gyroZ", "imuTemp", "bmpTemp", "bmpPressure",
+    "latitude", "longitude", "altitude", "groundSpeed",
 ]
 
 # ═══ FLIGHT PHASE DEFINITIONS ═══
@@ -40,9 +41,12 @@ class TelemetrySample:
     imuTemp: float
     bmpTemp: float
     bmpPressure: float
+    latitude: float = 0.0
+    longitude: float = 0.0
+    altitude: float = 0.0
+    groundSpeed: float = 0.0
 
     # Derived fields (per-sample)
-    altitude: float = 0.0
     velocity: float = 0.0
     smooth_velocity: float = 0.0
     gforce: float = 1.0
@@ -65,12 +69,15 @@ class TelemetrySample:
     @classmethod
     def parse(cls, line: str):
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) != len(FIELDS):
+        if len(parts) < 10:
             return None
         try:
-            values = [float(p) for p in parts]
+            values = [float(p) for p in parts[:14]]
         except ValueError:
             return None
+        # Pad to 14 fields if fewer were sent
+        while len(values) < 14:
+            values.append(0.0)
         return cls(*values)
 
     def compute_derived(self):
@@ -97,6 +104,9 @@ class TelemetrySample:
         # ── Barometric altitude ──
         if self._altitude_locked:
             # Altitude set externally (e.g. by IMU integration) — skip barometric
+            pass
+        elif self.altitude > 0:
+            # MCU sent altitude directly — use it, skip barometric calc
             pass
         elif self.bmpPressure > 0 and TelemetrySample._base_pressure > 0:
             ratio = self.bmpPressure / TelemetrySample._base_pressure
