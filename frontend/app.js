@@ -376,6 +376,10 @@ function update(d) {
   val('rawGyroX', d.gyroX);
   val('rawGyroY', d.gyroY);
   val('rawGyroZ', d.gyroZ);
+  val('rawLat', d.latitude, 6);
+  val('rawLon', d.longitude, 6);
+  val('rawGpsAlt', d.altitude, 2);
+  val('rawGndSpeed', d.groundSpeed, 2);
 
   // Update 3D rocket
   updateRocket(d);
