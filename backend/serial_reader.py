@@ -60,6 +60,7 @@ class SerialReader:
                     raw = self.serial.readline()
                     line = raw.decode("utf-8", errors="replace").strip()
                     if not line:
+                        self.invalid_count += 1
                         continue
                     sample = TelemetrySample.parse(line)
                     if sample is None:

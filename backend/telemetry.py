@@ -68,16 +68,15 @@ class TelemetrySample:
 
     @classmethod
     def parse(cls, line: str):
+        # Strict ingress validation: exactly 14 numeric CSV fields.
+        # Anything else is rejected (None) — never zero-padded or fabricated.
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 10:
+        if len(parts) != 14:
             return None
         try:
-            values = [float(p) for p in parts[:14]]
-        except ValueError:
+            values = [float(p) for p in parts]
+        except (ValueError, TypeError):
             return None
-        # Pad to 14 fields if fewer were sent
-        while len(values) < 14:
-            values.append(0.0)
         return cls(*values)
 
     def compute_derived(self):

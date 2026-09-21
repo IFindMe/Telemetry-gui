@@ -90,7 +90,11 @@ class LogReplayer:
         if not self._samples:
             return
         for i, row in enumerate(self._samples):
-            if float(row.get("time", 0)) >= timestamp:
+            try:
+                t = float(row.get("time", 0))
+            except (ValueError, TypeError):
+                continue  # malformed row: not seekable
+            if t >= timestamp:
                 self._index = i
                 return
         self._index = len(self._samples)  # past end → stop
@@ -139,25 +143,45 @@ class LogReplayer:
                 rows.append(row)
         return rows
 
-    def _row_to_sample(self, row: dict) -> TelemetrySample:
-        """Convert a CSV row dict to a TelemetrySample."""
-        # Always populate the 10 base fields
-        base = {k: float(row.get(k, 0)) for k in FIELDS}
+    @staticmethod
+    def _strict_float(value) -> float:
+        """Parse one raw CSV cell; raise if missing or non-numeric.
+
+        No 0-fill: a missing/empty/malformed cell rejects the whole row.
+        """
+        if value is None:
+            raise ValueError("missing value")
+        if isinstance(value, str) and value.strip() == "":
+            raise ValueError("empty value")
+        return float(value)
+
+    def _row_to_sample(self, row: dict) -> Optional[TelemetrySample]:
+        """Convert a CSV row dict to a TelemetrySample.
+
+        Strict ingress validation: all 14 base FIELDS must be present
+        and numeric. Returns None for malformed rows — the replay loop
+        skips those without broadcasting.
+        """
+        try:
+            base = {k: self._strict_float(row.get(k)) for k in FIELDS}
+        except (ValueError, TypeError):
+            return None
         sample = TelemetrySample(**base)
 
-        # If derived columns are present, set them directly
-        if "altitude" in row:
-            sample.altitude = float(row["altitude"])
-        if "velocity" in row:
-            sample.velocity = float(row["velocity"])
-        if "smooth_velocity" in row:
-            sample.smooth_velocity = float(row["smooth_velocity"])
-        if "gforce" in row:
-            sample.gforce = float(row["gforce"])
-        if "flight_phase" in row:
+        # If derived columns are present, set them directly (validated:
+        # a present-but-malformed derived cell rejects the row; a
+        # missing/empty one keeps the default).
+        try:
+            for key in ("altitude", "velocity", "smooth_velocity", "gforce"):
+                if key in row and row[key] is not None and str(row[key]).strip() != "":
+                    setattr(sample, key, self._strict_float(row[key]))
+            if "max_altitude" in row and row["max_altitude"] is not None \
+                    and str(row["max_altitude"]).strip() != "":
+                TelemetrySample.max_altitude = self._strict_float(row["max_altitude"])
+        except (ValueError, TypeError):
+            return None
+        if "flight_phase" in row and row["flight_phase"] not in (None, ""):
             sample.flight_phase = row["flight_phase"]
-        if "max_altitude" in row:
-            TelemetrySample.max_altitude = float(row["max_altitude"])
 
         # If derived fields are missing, compute them
         if "altitude" not in row:
@@ -176,14 +200,20 @@ class LogReplayer:
             sample = self._row_to_sample(row)
             self._index += 1
 
+            if sample is None:
+                continue  # rejected row: never broadcast
+
             if self._on_sample:
                 await self._on_sample(sample)
 
             # Determine delay until the next sample
             if self._index < len(self._samples):
-                t_now = float(row.get("time", 0))
-                t_next = float(self._samples[self._index].get("time", 0))
-                gap = (t_next - t_now) / self._speed
+                try:
+                    t_now = float(row.get("time", 0))
+                    t_next = float(self._samples[self._index].get("time", 0))
+                    gap = (t_next - t_now) / self._speed
+                except (ValueError, TypeError):
+                    gap = 0.001
                 # Clamp gap to sane bounds (prevent huge sleeps or zero-gap tight loops)
                 gap = max(0.001, min(gap, 2.0))
                 await asyncio.sleep(gap)
