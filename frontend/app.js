@@ -9,7 +9,7 @@ const $ = id => document.getElementById(id);
 const history = {
   accelX: [], accelY: [], accelZ: [],
   gyroX: [], gyroY: [], gyroZ: [],
-  altitude: [],
+  altitude: [], velocity: [],
 };
 const MAX = 180;
 let ws = null, lastPacket = performance.now(), packetsWindow = 0, lastRateTime = performance.now();
@@ -23,6 +23,7 @@ const phaseReached = {};
 let replaying = false;
 let replayPaused = false;
 let activeSourceTab = 'serial';
+let simulating = false;   // S4: declared with state (was :318) — refreshStatus() reads it
 
 // ═══ UTILITIES ═══
 function log(msg, kind = '') {
@@ -44,7 +45,11 @@ async function api(url, opts = {}) {
   return r.json();
 }
 
-function val(id, v, dec = 2) { $(id).textContent = Number(v).toFixed(dec); }
+function val(id, v, dec = 2) {
+  const e = $(id);
+  if (!e) return;   // S4: one missing element must not abort the packet's render
+  e.textContent = Number(v).toFixed(dec);
+}
 
 // ═══ PORT REFRESH ═══
 async function refreshPorts() {
@@ -315,8 +320,7 @@ document.querySelectorAll('.replay-speed-btn').forEach(btn => {
 });
 
 // ═══ SIMULATION ═══
-let simulating = false;
-
+// (S4: `let simulating` lives in STATE above — declare-before-use for refreshStatus)
 $('simBtn').onclick = async () => {
   try {
     simulating = !simulating;
@@ -335,6 +339,7 @@ $('simBtn').onclick = async () => {
 
 // ═══ TELEMETRY UPDATE ═══
 function push(k, v) {
+  if (!history[k]) return;
   history[k].push(v);
   if (history[k].length > MAX) history[k].shift();
 }

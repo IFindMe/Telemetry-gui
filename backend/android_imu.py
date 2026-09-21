@@ -14,7 +14,6 @@ Docs: https://phyphox.org/docs/remote-interface/
 """
 
 import asyncio
-import time
 from typing import Callable, Optional
 
 import httpx
@@ -47,6 +46,11 @@ class AndroidIMUReader:
         self._running = True
         self._last_time = -1.0
         self._first_fetch = True
+        # D2-2e: fresh integrator per session (server owns derived-state
+        # reset; the reader owns its instance integration state).
+        self._vel_z = 0.0
+        self._alt_imu = 0.0
+        self._last_imu_time = None
         self._client = httpx.AsyncClient(timeout=5.0)
 
         # Start measurement on the device
@@ -61,6 +65,10 @@ class AndroidIMUReader:
     async def stop(self):
         """Stop polling IMU data."""
         self._running = False
+        # D2-2e: clear integrator so a stale climb never greets next session.
+        self._vel_z = 0.0
+        self._alt_imu = 0.0
+        self._last_imu_time = None
         if self._task:
             self._task.cancel()
             try:
@@ -199,10 +207,32 @@ class AndroidIMUReader:
             ay = safe(acc_y_data, i)
             az = safe(acc_z_data, i)
 
-            now = time.time()
+            # IMU session state (normally seeded by start(); lazy backstop
+            # keeps direct _process_response callers safe).
+            if not hasattr(self, '_vel_z') or not hasattr(self, '_last_imu_time'):
+                self._vel_z = 0.0
+                self._alt_imu = 0.0
+                self._last_imu_time = None
+
+            # D3-3d: physics stamp from the Phyphox acc_time buffer
+            # (device-monotonic per experiment run), never wall-clock.
+            # Fallback: synthetic monotonic last+0.1 chain.
+            raw_t = acc_time_data[i] if i < len(acc_time_data) else None
+            try:
+                t_imu = float(raw_t) if raw_t is not None else None
+            except (TypeError, ValueError):
+                t_imu = None
+            if self._last_imu_time is None:
+                if t_imu is None:
+                    t_imu = 0.0
+                dt = 0.1
+            else:
+                if t_imu is None or t_imu <= self._last_imu_time:
+                    t_imu = self._last_imu_time + 0.1
+                dt = t_imu - self._last_imu_time
 
             sample = TelemetrySample(
-                time=now,
+                time=t_imu,
                 accelX=ax,
                 accelY=ay,
                 accelZ=az,
@@ -214,16 +244,12 @@ class AndroidIMUReader:
                 bmpPressure=0.0,
             )
 
-            # Lock altitude/velocity so compute_derived doesn't overwrite
-            sample._altitude_locked = True
+            # D1-1d: the phone experiment owns this altitude (no GPS alt);
+            # D2-2b: declare the integrated velocity locked so the funnel's
+            # single compute_derived() preserves it (read-checked flag).
+            sample.velocity_locked = True
 
             # IMU-derived altitude via double integration of vertical acceleration
-            if not hasattr(self, '_vel_z'):
-                self._vel_z = 0.0
-                self._alt_imu = 0.0
-                self._last_imu_time = now
-
-            dt = now - self._last_imu_time
             if 0 < dt < 1.0:
                 net_accel_z = az - 9.81
                 self._vel_z += net_accel_z * dt
@@ -231,13 +257,14 @@ class AndroidIMUReader:
                 self._alt_imu = max(-100, min(10000, self._alt_imu))
                 self._vel_z = max(-100, min(500, self._vel_z))
 
-            self._last_imu_time = now
+            self._last_imu_time = t_imu
 
             sample.altitude = self._alt_imu
             sample.velocity = self._vel_z
 
-            # Compute derived values (gforce, phase — altitude/velocity locked)
-            sample.compute_derived()
+            # D2-2a: single-call invariant — NO compute_derived() here; the
+            # funnel sample_handler derives gforce/phase/max_alt once.
+            # (Dead _altitude_locked flag deleted with the pre-call.)
 
             # Emit sample
             if self._sample_handler:

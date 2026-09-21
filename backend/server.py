@@ -23,6 +23,42 @@ log_writer = LogWriter()
 clients = set()
 history = deque(maxlen=1200)
 
+# ═══ FUNNEL SEQUENCING (D3-3a) + SESSION RESET (D2-2e) ═══
+# Single global implementation: every broadcast payload AND history entry
+# gets (source, session, seq). Counters live here — never in the readers.
+_funnel_source: str = ""
+_funnel_session: int = 0
+_funnel_seq: int = 0
+
+
+def _begin_session(source: str):
+    """Start a new funnel session: full derived-state reset (D2-2e),
+    new session_id, seq restarts at 0 (D3-3a). Called on every source START."""
+    global _funnel_source, _funnel_session, _funnel_seq
+    TelemetrySample.reset()
+    _funnel_source = source
+    _funnel_session += 1
+    _funnel_seq = 0
+
+
+def _end_session():
+    """Close a session: reset derived state so no stale phase/velocity/
+    max_alt greets the next session even if its start path is bypassed
+    (D2-2e). Called on every source STOP/DISCONNECT."""
+    global _funnel_seq
+    TelemetrySample.reset()
+    _funnel_seq = 0
+
+
+def _tag_payload(data: dict) -> dict:
+    """Stamp one funnel dict with the current (source, session, seq)."""
+    global _funnel_seq
+    data["source"] = _funnel_source
+    data["session"] = _funnel_session
+    data["seq"] = _funnel_seq
+    _funnel_seq += 1
+    return data
+
 
 async def broadcast(payload):
     dead = []
@@ -37,10 +73,21 @@ async def broadcast(payload):
 
 async def sample_handler(sample):
     sample.compute_derived()
-    payload = {"type": "telemetry", "data": sample.as_dict()}
-    history.append(sample.as_dict())
+    data = _tag_payload(sample.as_dict())
+    payload = {"type": "telemetry", "data": data}
+    history.append(data)
     if log_writer.recording:
         log_writer.write(sample)
+    await broadcast(payload)
+
+
+async def replay_handler(sample):
+    """D2-2c: verbatim replay — recorded derived columns pass through
+    untouched. MUST NOT call compute_derived() and MUST NOT write to
+    log_writer (no recursive record-of-replay)."""
+    data = _tag_payload(sample.as_dict())
+    payload = {"type": "telemetry", "data": data}
+    history.append(data)
     await broadcast(payload)
 
 
@@ -104,12 +151,14 @@ async def connect(payload: dict):
         await reader.connect(port, baud)
     except Exception as exc:
         raise HTTPException(500, str(exc))
+    _begin_session("serial")
     return await status()
 
 
 @app.post("/api/disconnect")
 async def disconnect():
     await reader.disconnect()
+    _end_session()
     return await status()
 
 
@@ -133,11 +182,12 @@ async def simulate(payload: dict):
         # Stop serial if connected
         if reader.connected:
             await reader.disconnect()
-        TelemetrySample.reset()
+        _begin_session("sim")
         await simulator.start()
         history.clear()
     else:
         await simulator.stop()
+        _end_session()
     return await status()
 
 
@@ -159,9 +209,11 @@ async def android_source(payload: dict):
         android_imu.ip = ip
         android_imu.port = port
         android_imu.base_url = f"http://{ip}:{port}"
+        _begin_session("android")
         await android_imu.start(sample_handler)
     else:
         await android_imu.stop()
+        _end_session()
 
     return await status()
 
@@ -184,6 +236,8 @@ async def replay(payload: dict):
         if not ("/" in log_file or "\\" in log_file):
             log_file = str(Path("logs") / log_file)
         speed = float(payload.get("speed", 1.0))
+        # D2-2d: recompute toggle (default False = verbatim reproduction).
+        recompute = bool(payload.get("recompute", False))
         # Stop other sources
         if simulator.running:
             await simulator.stop()
@@ -191,11 +245,13 @@ async def replay(payload: dict):
             await reader.disconnect()
         if android_imu.is_running:
             await android_imu.stop()
-        TelemetrySample.reset()
+        _begin_session("replay")
         history.clear()
-        await log_replayer.start(log_file, sample_handler, speed)
+        handler = sample_handler if recompute else replay_handler
+        await log_replayer.start(log_file, handler, speed, recompute=recompute)
     else:
         await log_replayer.stop()
+        _end_session()
     return await status()
 
 

@@ -44,10 +44,16 @@ class TelemetrySample:
     velocity: float = 0.0
     gforce: float = 1.0
     flight_phase: str = "PRE-FLIGHT"
+    # D2-2b: source-declared opt-out. The IMU path sets this True so its
+    # double-integrated velocity survives compute_derived(); serial/sim
+    # leave it False and get altitude-delta velocity. Read-checked below —
+    # never a write-only flag.
+    velocity_locked: bool = False
 
     # Class-level state (persists across samples)
     _prev_alt: float = 0.0
     _prev_time: float = 0.0
+    _prev_velocity: float = 0.0
     _initialized: bool = False
     _phase_lock_count: int = 0
     _current_phase: str = "PRE-FLIGHT"
@@ -79,14 +85,23 @@ class TelemetrySample:
 
         dt = now - TelemetrySample._prev_time
         if dt <= 0:
-            dt = 0.01
-        TelemetrySample._prev_time = now
-
-        # Velocity from altitude delta using MCU time
-        raw_vel = (self.altitude - TelemetrySample._prev_alt) / max(dt, 0.001)
-        raw_vel = max(-200.0, min(200.0, raw_vel))
-        TelemetrySample._prev_alt = self.altitude
-        self.velocity = raw_vel
+            # D3-3c: duplicate/out-of-order stamp — hold last velocity
+            # instead of fabricating with 0.01; keep last-good anchor
+            # (_prev_alt/_prev_time NOT advanced). Gforce/phase/max_alt
+            # below still compute normally.
+            if not self.velocity_locked:
+                self.velocity = TelemetrySample._prev_velocity
+        else:
+            TelemetrySample._prev_time = now
+            # Velocity from altitude delta using MCU time (serial/sim only).
+            # D2-2b: a source-locked (IMU-integrated) velocity is preserved.
+            # D1-1a: self.altitude is never assigned here — ingress owns it.
+            raw_vel = (self.altitude - TelemetrySample._prev_alt) / max(dt, 0.001)
+            raw_vel = max(-200.0, min(200.0, raw_vel))
+            TelemetrySample._prev_alt = self.altitude
+            if not self.velocity_locked:
+                self.velocity = raw_vel
+            TelemetrySample._prev_velocity = self.velocity
 
         # G-force from accelerometer
         self.gforce = math.sqrt(self.accelX**2 + self.accelY**2 + self.accelZ**2) / 9.81
@@ -142,6 +157,7 @@ class TelemetrySample:
         """Reset all class-level state for a new session."""
         cls._prev_alt = 0.0
         cls._prev_time = 0.0
+        cls._prev_velocity = 0.0
         cls._initialized = False
         cls._phase_lock_count = 0
         cls._current_phase = "PRE-FLIGHT"
