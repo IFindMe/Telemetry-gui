@@ -178,10 +178,23 @@ class LogReplayer:
                 rows.append(row)
         return rows
 
-    def _row_to_sample(self, row: dict) -> TelemetrySample:
-        """Convert a CSV row dict to a TelemetrySample."""
-        # Always populate the base fields
-        base = {k: float(row.get(k, 0)) for k in FIELDS}
+    def _row_to_sample(self, row: dict) -> Optional[TelemetrySample]:
+        """Convert a CSV row dict to a TelemetrySample.
+
+        Strict: every base FIELDS column must be present and numeric.
+        A missing/empty/corrupt column returns None (row skipped) —
+        never a silent 0, which would fabricate telemetry on the
+        dashboard. Same bug class as the telemetry.py zero-pad.
+        """
+        base = {}
+        for k in FIELDS:
+            v = row.get(k)
+            if v is None or v == "":
+                return None
+            try:
+                base[k] = float(v)
+            except (ValueError, TypeError):
+                return None
         sample = TelemetrySample(**base)
 
         # D2-2d (dead branch inverted): the old `if "altitude" not in row`
@@ -216,6 +229,9 @@ class LogReplayer:
             row = self._samples[self._index]
             sample = self._row_to_sample(row)
             self._index += 1
+
+            if sample is None:
+                continue
 
             if self._on_sample:
                 await self._on_sample(sample)

@@ -63,6 +63,14 @@ function val(id, v, dec = 2) {
   if (e.textContent !== s) e.textContent = s;   // S5: skip redundant writes
 }
 
+// Hold-last-known guard: a missing (null/undefined/'') or NaN telemetry
+// field keeps the previously displayed value instead of writing 0/NaN.
+// Legit 0 (incl. 0 g in free-fall) IS present — never use `||` here.
+function present(v) {
+  if (v === null || v === undefined || v === '') return false;
+  return !Number.isNaN(Number(v));
+}
+
 // ═══ PORT REFRESH ═══
 async function refreshPorts() {
   const ports = await api('/api/ports');
@@ -373,50 +381,52 @@ function update(d) {
   // ── MET clock — MCU time ──
   if (metStartMcu === null) metStartMcu = d.time;
 
-  // Push history
-  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => push(k, d[k]));
-  push('altitude', d.altitude || 0);
-  push('velocity', d.velocity || 0);
+  // Hold-last-known: a missing field skips its write, so the DOM and
+  // history keep the previous value instead of rendering 0. Presence
+  // checks (not `||`) preserve legit 0 — incl. 0 g in free-fall.
+  const alt = present(d.altitude) ? Number(d.altitude) : null;
+  const vel = present(d.velocity) ? Number(d.velocity) : null;
+  const gf = present(d.gforce) ? Number(d.gforce) : null;
 
-  // Use backend-computed derived values
-  const alt = d.altitude || 0;
-  const vel = d.velocity || 0;
-  const gf = d.gforce || 1;
+  // Push history (skip missing — charts hold their tail)
+  ['accelX', 'accelY', 'accelZ', 'gyroX', 'gyroY', 'gyroZ'].forEach(k => { if (present(d[k])) push(k, Number(d[k])); });
+  if (alt !== null) push('altitude', alt);
+  if (vel !== null) push('velocity', vel);
 
-  // Update displays
-  val('roll', d.gyroX);
-  val('pitch', d.gyroY);
-  val('yaw', d.gyroZ);
-  val('imuTemp', d.imuTemp, 1);
-  val('bmpTemp', d.bmpTemp, 1);
-  val('pressure', d.bmpPressure, 1);
-  val('altitude', alt, 0);
-  val('velocity', vel, 1);
-  val('gforce', gf, 2);
+  // Update displays (skip missing — readouts hold last-known)
+  if (present(d.gyroX)) val('roll', d.gyroX);
+  if (present(d.gyroY)) val('pitch', d.gyroY);
+  if (present(d.gyroZ)) val('yaw', d.gyroZ);
+  if (present(d.imuTemp)) val('imuTemp', d.imuTemp, 1);
+  if (present(d.bmpTemp)) val('bmpTemp', d.bmpTemp, 1);
+  if (present(d.bmpPressure)) val('pressure', d.bmpPressure, 1);
+  if (alt !== null) val('altitude', alt, 0);
+  if (vel !== null) val('velocity', vel, 1);
+  if (gf !== null) val('gforce', gf, 2);
 
   // Raw data
-  val('rawAccelX', d.accelX);
-  val('rawAccelY', d.accelY);
-  val('rawAccelZ', d.accelZ);
-  val('rawGyroX', d.gyroX);
-  val('rawGyroY', d.gyroY);
-  val('rawGyroZ', d.gyroZ);
-  val('rawLat', d.latitude, 6);
-  val('rawLon', d.longitude, 6);
-  val('rawGpsAlt', d.altitude, 2);
-  val('rawGndSpeed', d.groundSpeed, 2);
+  if (present(d.accelX)) val('rawAccelX', d.accelX);
+  if (present(d.accelY)) val('rawAccelY', d.accelY);
+  if (present(d.accelZ)) val('rawAccelZ', d.accelZ);
+  if (present(d.gyroX)) val('rawGyroX', d.gyroX);
+  if (present(d.gyroY)) val('rawGyroY', d.gyroY);
+  if (present(d.gyroZ)) val('rawGyroZ', d.gyroZ);
+  if (present(d.latitude)) val('rawLat', d.latitude, 6);
+  if (present(d.longitude)) val('rawLon', d.longitude, 6);
+  if (alt !== null) val('rawGpsAlt', d.altitude, 2);
+  if (present(d.groundSpeed)) val('rawGndSpeed', d.groundSpeed, 2);
 
-  // Update 3D rocket
+  // Update 3D rocket (holds internally on missing fields)
   updateRocket(d);
 
-  // Update artificial horizon
-  updateHorizon(d.gyroY, d.gyroX);
+  // Update artificial horizon (skip when attitude missing — holds)
+  if (present(d.gyroY) && present(d.gyroX)) updateHorizon(d.gyroY, d.gyroX);
 
-  // Update altitude gauge
-  updateAltGauge(alt);
+  // Update altitude gauge (skip when missing — holds)
+  if (alt !== null) updateAltGauge(alt);
 
-  // Update flight phase from backend
-  updateFlightPhaseDisplay(d.flight_phase || 'STANDBY');
+  // Update flight phase from backend (missing holds last phase)
+  updateFlightPhaseDisplay(d.flight_phase ?? lastPhaseShown ?? 'STANDBY');
 
   // Update MET clock
   updateMET();
@@ -567,14 +577,21 @@ function initRocket3D() {
 function updateRocket(d) {
   if (!rocketGroup) return;
 
-  const alt = d.altitude || 0;
-  const vel = d.velocity || 0;
-  const phase = d.flight_phase || 'PRE-FLIGHT';
-  const ax = d.accelX || 0;
-  const ay = d.accelY || 0;
-  const gz = d.gyroZ || 0;
   const now = performance.now() / 1000;
   const S = rocketState;
+
+  // Hold-last-known: a missing field reuses previous state instead of
+  // snapping the rocket to the ground (alt 0) on a degraded packet.
+  // ax/ay/gz feed only wobble deltas, so a neutral 0 is safe for them.
+  const alt = present(d.altitude) ? Number(d.altitude) : S.altitude;
+  const vel = present(d.velocity) ? Number(d.velocity) : S.velocity;
+  const phase = d.flight_phase ?? S.phase;
+  const ax = present(d.accelX) ? Number(d.accelX) : 0;
+  const ay = present(d.accelY) ? Number(d.accelY) : 0;
+  const gz = present(d.gyroZ) ? Number(d.gyroZ) : 0;
+  S.altitude = alt;
+  S.velocity = vel;
+  S.phase = phase;
 
   // Track max altitude for scaling
   if (alt > S.maxAlt) S.maxAlt = Math.max(alt, 100);

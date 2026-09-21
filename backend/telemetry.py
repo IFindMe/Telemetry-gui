@@ -62,16 +62,18 @@ class TelemetrySample:
 
     @classmethod
     def parse(cls, line: str):
+        # Strict validation (mirrors tools/fallback_serial_logger.py
+        # parse_line): exactly 14 CSV fields, all numeric. Truncated or
+        # corrupt lines return None — the caller (serial_reader) skips
+        # them and counts invalid. Never zero-pad: padded fields become
+        # fake 0s in the CSV log and on the dashboard.
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 10:
+        if len(parts) != 14:
             return None
         try:
-            values = [float(p) for p in parts[:14]]
+            values = [float(p) for p in parts]
         except ValueError:
             return None
-        # Pad to 14 fields if fewer were sent
-        while len(values) < 14:
-            values.append(0.0)
         return cls(*values)
 
     def compute_derived(self):
