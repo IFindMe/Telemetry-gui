@@ -7,4 +7,4 @@
 - Each `NN-<slug>.md` is self-contained: an Orchestrator can dispatch it to one specialist reading only that file (+ its listed inputs). Do not re-feed the whole goal.
 - `flag.json` is execution state (`pending|in-progress|done` per task). Only the Orchestrator flips `in-progress`/`done`; any structural change (split/merge/add/rescope) returns to Breakdowner.
 - Sources of truth for this tree: Detective `2026-09-21_sim-mode-freeze.md` + Explorer `2026-09-21_system-map-and-practices.md`. No broad repo re-exploration was performed.
-- Detailed plan rationale lives at `AgentsReport/breakdowner/2026-09-21_harden-tree.md`.
+- Detailed plan rationale lives at `.opencode/AgentsReport/breakdowner/2026-09-21_harden-tree.md`.

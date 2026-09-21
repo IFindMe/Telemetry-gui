@@ -1,6 +1,6 @@
 # Overview — telemetry-harden plan
 
-Goal: harden + improve rocket Telemetry-gui. Sources: `AgentsReport/detective/2026-09-21_sim-mode-freeze.md`, `AgentsReport/explorer/2026-09-21_system-map-and-practices.md`.
+Goal: harden + improve rocket Telemetry-gui. Sources: `.opencode/AgentsReport/detective/2026-09-21_sim-mode-freeze.md`, `.opencode/AgentsReport/explorer/2026-09-21_system-map-and-practices.md`.
 
 ## Ordered task list (description + depends-on + role hint)
 

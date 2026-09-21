@@ -1,7 +1,7 @@
 # Breakdown Report — harden + improve Telemetry-gui (tree build)
 
 ## TL;DR
-- Goal: harden + improve rocket Telemetry-gui → tree `.tasks/telemetry-harden/`, 16 tasks (01–16).
+- Goal: harden + improve rocket Telemetry-gui → tree `.opencode/tasks/telemetry-harden/`, 16 tasks (01–16).
 - Structure: hotfix chain (01→02) + Architect gate (03→{04,05,06}+{11–15}) + frontend serialize (01→07→08, 07→09→10) + free docs (16).
 - Key calls: Architect 03 blocks all S1–S3 Builder work; S4+S5 are Builder+Tester pairs; R1–R5 optional spikes; docs owned solely by Writer.
 - Open: Builder in-flight on 01; Architect 03 is the critical-path unblocker; R6/R7 explicitly deferred (not in R1–R5 set).
@@ -10,7 +10,7 @@
 ## Decision 1: tree shape from goal size [DONE]
 - Evidence: goal spans 10+ files (`backend/server.py`, `telemetry.py`, `android_imu.py`, `simulator.py`, `log_replay.py`, `log_writer.py`, `serial_reader.py`, `frontend/app.js`, `index.html`, `README.md`), 5 structural risks S1–S5 + hotfix + 5 research spikes + docs; brief mandates full tree, goal is not trivial.
 - Actions: chose 16-task tree over minimal (hotfix-only) and maximal (every risk as Builder+Tester pair) alternatives — S1–S3 single Builder tasks gated by Architect (they share one decision), S4/S5 as pairs (frontend correctness vs perf need separate verification), R-tasks as optional spikes.
-- Result: `.tasks/telemetry-harden/` with README, 00-overview, 16 task files, flag.json.
+- Result: `.opencode/tasks/telemetry-harden/` with README, 00-overview, 16 task files, flag.json.
 
 ## Decision 2: hotfix track first, exempt from gate [DONE]
 - Evidence: Detective ROOT_CAUSE_ESTABLISHED — `frontend/app.js:360` vs `:9-13`, fix sketch add-`velocity: []`/guard `push()`; scope boundary "no architectural change, single-frontend-file".
@@ -43,7 +43,7 @@
 
 ## Tree listing
 ```
-.tasks/telemetry-harden/
+.opencode/tasks/telemetry-harden/
 ├── README.md
 ├── 00-overview.md
 ├── 01-hotfix-velocity-history.md

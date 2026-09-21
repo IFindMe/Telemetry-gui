@@ -7,5 +7,5 @@
 - **Scope fence (in):** prototype or design only — `backend/telemetry.py:71-100`, `backend/simulator.py:168-219` (baro synthesis), pressure→altitude path. No production cutover required.
 - **Out-of-scope:** production migration, event lockouts (Task 12), attitude (Task 15).
 - **Inputs to read:** Explorer § Step 4 R1 + Step 1 backend paths; Task-03 record; `backend/telemetry.py`, `backend/simulator.py`.
-- **Output format:** spike note in `AgentsReport/architect/` (approach, fallback rule, files to change, risk) + optional throwaway diff.
+- **Output format:** spike note in `.opencode/AgentsReport/architect/` (approach, fallback rule, files to change, risk) + optional throwaway diff.
 - **Verification:** spike shows baro-driven altitude/velocity stable vs GPS-delta noise on sim data, or documents why not.
