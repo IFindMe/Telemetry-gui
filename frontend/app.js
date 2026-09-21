@@ -702,9 +702,9 @@ function updateAltGauge(alt) {
   }
   if (pointer) {
     // Pointer on the right side, points left toward the track
-    pointer.setAttribute('points', `68,${pointerY - 5} 74,${pointerY} 68,${pointerY + 5}`);
+    pointer.setAttribute('points', `74,${pointerY - 5} 68,${pointerY} 74,${pointerY + 5}`);
   }
-  if (val) val.textContent = Math.round(alt) + ' m';
+  if (val) val.textContent = alt.toFixed(1) + ' m';
 }
 
 // ═══ FLIGHT PHASE ═══
