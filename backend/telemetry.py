@@ -65,6 +65,7 @@ class TelemetrySample:
     max_altitude: float = 0.0
     _max_reached: bool = False
     _smooth_level: str = "HIGH"
+    _mcu_alt_used: bool = False  # True once MCU altitude is first received
 
     @classmethod
     def parse(cls, line: str):
@@ -108,11 +109,18 @@ class TelemetrySample:
         elif self.altitude > 0:
             # MCU sent altitude directly — use it, skip barometric calc
             pass
+        elif TelemetrySample._mcu_alt_used and self.altitude == 0:
+            # GPS fix lost (altitude=0) — keep last known altitude, don't fall back to barometric
+            self.altitude = TelemetrySample._prev_alt
         elif self.bmpPressure > 0 and TelemetrySample._base_pressure > 0:
             ratio = self.bmpPressure / TelemetrySample._base_pressure
             self.altitude = 44330.0 * (1.0 - math.pow(max(ratio, 0.001), 1.0 / 5.255))
         else:
             self.altitude = 0.0
+
+        # Track whether MCU altitude has ever been used
+        if self.altitude > 0 and not self._altitude_locked:
+            TelemetrySample._mcu_alt_used = True
 
         # Clamp negative altitude to 0
         self.altitude = max(0.0, self.altitude)
@@ -213,6 +221,7 @@ class TelemetrySample:
         cls.smooth_velocity = 0.0
         cls.max_altitude = 0.0
         cls._max_reached = False
+        cls._mcu_alt_used = False
         _smooth_initialized = False
 
     @classmethod
@@ -230,21 +239,28 @@ class TelemetrySample:
         return cls._smooth_level
 
     def _apply_smoothing(self):
-        """Apply EMA smoothing to accel values in-place."""
+        """Apply EMA smoothing to accel and gyro values in-place."""
         global _smooth_state, _smooth_initialized
         alpha = SMOOTH_ALPHA[TelemetrySample._smooth_level]
         if alpha >= 1.0:
             return  # OFF — no smoothing
         if not _smooth_initialized:
-            _smooth_state = {"x": self.accelX, "y": self.accelY, "z": self.accelZ}
+            _smooth_state = {"x": self.accelX, "y": self.accelY, "z": self.accelZ,
+                             "gx": self.gyroX, "gy": self.gyroY, "gz": self.gyroZ}
             _smooth_initialized = True
             return
         _smooth_state["x"] = alpha * self.accelX + (1 - alpha) * _smooth_state["x"]
         _smooth_state["y"] = alpha * self.accelY + (1 - alpha) * _smooth_state["y"]
         _smooth_state["z"] = alpha * self.accelZ + (1 - alpha) * _smooth_state["z"]
+        _smooth_state["gx"] = alpha * self.gyroX + (1 - alpha) * _smooth_state["gx"]
+        _smooth_state["gy"] = alpha * self.gyroY + (1 - alpha) * _smooth_state["gy"]
+        _smooth_state["gz"] = alpha * self.gyroZ + (1 - alpha) * _smooth_state["gz"]
         self.accelX = _smooth_state["x"]
         self.accelY = _smooth_state["y"]
         self.accelZ = _smooth_state["z"]
+        self.gyroX = _smooth_state["gx"]
+        self.gyroY = _smooth_state["gy"]
+        self.gyroZ = _smooth_state["gz"]
 
     def as_dict(self):
         d = {field_name: getattr(self, field_name) for field_name in FIELDS}
