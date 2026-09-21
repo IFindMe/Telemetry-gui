@@ -114,6 +114,11 @@ async function refreshStatus() {
     replaying = s.replaying;
     $('replayBtn').textContent = replaying ? '■ STOP' : '▶ PLAY';
     $('replayProgress').value = s.replay_total ? (s.replay_position / s.replay_total) * 100 : 0;
+    // Update replay time display
+    const rPos = s.replay_position || 0;
+    const rTot = s.replay_total || 0;
+    const fmt = n => { const m = Math.floor(n / 60); const sec = Math.floor(n % 60); return m + ':' + String(sec).padStart(2, '0'); };
+    $('replayTime').textContent = fmt(rPos) + ' / ' + fmt(rTot);
     if (s.replay_file) {
       // Ensure the right log is selected
       const opt = $('logSelect').querySelector(`option[value="${s.replay_file}"]`);

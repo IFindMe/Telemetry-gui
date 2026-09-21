@@ -61,7 +61,7 @@ class TelemetrySample:
     _phase_lock_count: int = 0
     _current_phase: str = "PRE-FLIGHT"
     _sample_count: int = 0
-    smooth_velocity: float = 0.0
+    smooth_velocity: float = 0.0  # class-level EMA state (persists across samples; synced to instance in compute_derived)
     max_altitude: float = 0.0
     _max_reached: bool = False
     _smooth_level: str = "HIGH"
@@ -130,6 +130,7 @@ class TelemetrySample:
             # EMA low-pass filter (alpha=0.3 → responsive but smooth)
             TelemetrySample.smooth_velocity = 0.3 * raw_vel + 0.7 * TelemetrySample.smooth_velocity
             self.velocity = TelemetrySample.smooth_velocity
+            self.smooth_velocity = TelemetrySample.smooth_velocity
 
         # ── G-force from accelerometer ──
         accel_mag = math.sqrt(self.accelX**2 + self.accelY**2 + self.accelZ**2)
