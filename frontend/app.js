@@ -372,7 +372,7 @@ function update(d) {
   val('pressure', d.bmpPressure, 1);
   val('altitude', alt, 0);
   val('velocity', vel, 1);
-  val('gforce', gf, 2);
+  val('gforce', d.gforce == null ? gf : d.gforce * 10, 2);   // display ×10; missing still falls back to 1.00
 
   // Raw data
   val('rawAccelX', d.accelX);
@@ -752,8 +752,28 @@ function updateMET() {
   $('met').textContent = `T-${h}:${m}:${s}`;
 }
 
+// ═══ NICE TICKS (dynamic Y-axis ruler) ═══
+function niceTicks(lo, hi, target) {
+  if (!isFinite(lo) || !isFinite(hi)) return { ticks: [], step: 0 };
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const rawStep = (hi - lo) / Math.max(target, 2);
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const niceNorm = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 3.5 ? 2.5 : norm < 7.5 ? 5 : 10;
+  const step = niceNorm * mag;
+  const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) + (niceNorm === 2.5 ? 1 : 0);
+  const fmt = v => (v === 0 ? '0' : v.toFixed(dec).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''));
+  const ticks = [];
+  // Extend outward to nice bounds so ticks always cover [lo, hi]
+  // (divisor 3 + ≤1 extra tick per side ⇒ ~4-6 ticks total).
+  for (let k = Math.floor(lo / step + 1e-9); k <= Math.ceil(hi / step - 1e-9); k++) {
+    ticks.push({ v: k * step, label: fmt(k * step) });
+  }
+  return { ticks, step };
+}
+
 // ═══ CHARTS ═══
-function drawChart(canvasId, keys, colors) {
+function drawChart(canvasId, keys, colors, unit) {
   const c = $(canvasId);
   if (!c) return;
   const ctx = c.getContext('2d');
@@ -765,6 +785,8 @@ function drawChart(canvasId, keys, colors) {
   c.height = h * dpr;
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
+  const PLOT_PAD = 38; // label gutter so Y ruler never overlaps the trace
+  unit = unit || '';
 
   // Grid
   ctx.strokeStyle = 'rgba(30,45,61,.5)';
@@ -793,6 +815,23 @@ function drawChart(canvasId, keys, colors) {
   lo -= pad;
   hi += pad;
 
+  // Dynamic Y ruler: recomputed every redraw from current lo/hi
+  const { ticks } = niceTicks(lo, hi, 3);
+  ctx.font = '9px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ticks.forEach((t, ti) => {
+    const y = h - (t.v - lo) / (hi - lo) * h;
+    ctx.strokeStyle = 'rgba(139,163,199,.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PLOT_PAD - 4, y);
+    ctx.lineTo(PLOT_PAD, y);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(139,163,199,.75)';
+    ctx.fillText(ti === ticks.length - 1 && unit ? t.label + ' ' + unit : t.label, PLOT_PAD - 6, y);
+  });
+
   keys.forEach((k, i) => {
     const a = history[k];
     if (!a || !a.length) return;
@@ -800,7 +839,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = j / (MAX - 1) * w;
+      const x = PLOT_PAD + j / (MAX - 1) * (w - PLOT_PAD);
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -811,7 +850,7 @@ function drawChart(canvasId, keys, colors) {
     ctx.lineWidth = 4;
     ctx.beginPath();
     a.forEach((v, j) => {
-      const x = j / (MAX - 1) * w;
+      const x = PLOT_PAD + j / (MAX - 1) * (w - PLOT_PAD);
       const y = h - (v - lo) / (hi - lo) * h;
       j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
@@ -843,9 +882,9 @@ function initPitchLines() {
 
 // ═══ ANIMATION LOOP ═══
 function frame() {
-  drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81']);
-  drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf']);
-  drawChart('altChart', ['altitude'], ['#ffb800']);
+  drawChart('accelChart', ['accelX', 'accelY', 'accelZ'], ['#ff6b6b', '#00d4ff', '#26de81'], 'm/s²');
+  drawChart('gyroChart', ['gyroX', 'gyroY', 'gyroZ'], ['#a78bfa', '#ffb800', '#2dd4bf'], '°/s');
+  drawChart('altChart', ['altitude'], ['#ffb800'], 'm');
   requestAnimationFrame(frame);
 }
 
